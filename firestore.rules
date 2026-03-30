@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Yardımcı fonksiyonlar ─────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getStaff() {
+      return get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
+    }
+
+    // roles dizisi VEYA role tekili ile çalışır
+    function hasRole(role) {
+      return isSignedIn() && (
+        getStaff().role == role ||
+        (role in getStaff().get('roles', []))
+      );
+    }
+
+    function hasAnyRole(roles) {
+      return isSignedIn() && (
+        getStaff().role in roles ||
+        getStaff().get('roles', []).hasAny(roles)
+      );
+    }
+
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    // ── Masalar ───────────────────────────────────────────────────────────
+    match /tables/{tableId} {
+      allow read:   if true;   // QR okuma için herkese açık
+      allow create: if hasAnyRole(['kitchen', 'waiter', 'admin']);
+      allow update: if hasAnyRole(['kitchen', 'waiter', 'admin']);
+      allow delete: if isAdmin();
+    }
+
+    // ── Ürünler ───────────────────────────────────────────────────────────
+    match /products/{productId} {
+      allow read:   if true;   // Genel menü
+      allow create: if hasAnyRole(['kitchen', 'admin']);
+      allow update: if hasAnyRole(['kitchen', 'admin']);
+      allow delete: if isAdmin();
+    }
+
+    // ── Kategoriler ───────────────────────────────────────────────────────
+    match /categories/{catId} {
+      allow read:   if true;
+      allow create: if hasAnyRole(['kitchen', 'admin']);
+      allow update: if hasAnyRole(['kitchen', 'admin']);
+      allow delete: if isAdmin();
+    }
+
+    // ── Siparişler ────────────────────────────────────────────────────────
+    match /orders/{orderId} {
+      // Müşteriler sipariş oluşturabilir
+      allow create: if true;
+
+      // Tek sipariş okuma: herkese açık (müşteri takip için ID ile erişim)
+      allow get: if true;
+
+      // Liste/sorgu: sadece personel (müşteri tüm siparişleri görmemeli)
+      allow list: if hasAnyRole(['kitchen', 'waiter', 'admin']);
+
+      // müşteri kendi siparişini de sorgulayabilsin (telefon/sessionId filtreli)
+      allow list: if
+        request.query.filters.size() > 0 && (
+          ('customerPhone' in request.query.filters[0]) ||
+          ('sessionId'     in request.query.filters[0]) ||
+          ('tableId'       in request.query.filters[0])
+        );
+
+      allow update: if hasAnyRole(['kitchen', 'waiter', 'admin']);
+      allow delete: if isAdmin();
+    }
+
+    // ── Bildirimler ───────────────────────────────────────────────────────
+    match /notifications/{notifId} {
+      allow read:   if hasAnyRole(['kitchen', 'waiter', 'admin']);
+      allow create: if hasAnyRole(['kitchen', 'waiter', 'admin']);
+      allow update: if hasAnyRole(['kitchen', 'waiter', 'admin']);
+      allow delete: if isAdmin();
+    }
+
+    // ── Personel ──────────────────────────────────────────────────────────
+    match /staff/{uid} {
+      // Sadece kendi kaydını veya admin görebilir
+      allow read:   if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if isAdmin();
+      allow delete: if isAdmin();
+      // Admin tüm alanları güncelleyebilir; personel sadece kendi FCM tokenını
+      allow update: if isAdmin() ||
+                    (isSignedIn() && request.auth.uid == uid &&
+                     request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['fcmToken', 'updatedAt']));
+    }
+  }
+}
+
