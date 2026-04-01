@@ -2,7 +2,7 @@
 //  Domain types for Dudullu Tuba Sofrası
 // ─────────────────────────────────────────────
 
-export type UserRole = 'admin' | 'kitchen' | 'waiter';
+export type UserRole = 'admin' | 'kitchen' | 'waiter' | 'cashier';
 
 export interface StaffUser {
   uid: string;
@@ -106,6 +106,13 @@ export interface NotificationRecord {
   sentAt: Date;
   read: boolean;
   targetRole: UserRole | 'customer';
+}
+
+// ─── Gel Al Settings (Firestore: settings/gel-al) ───
+export interface GelAlSettings {
+  phoneVerification: boolean;  // SMS OTP doğrulama aktif mi
+  whatsappEnabled: boolean;    // WhatsApp sipariş hattı aktif mi
+  whatsappNumber: string;      // Sipariş WhatsApp numarası (+90...)
 }
 
 // ─── Cart (client-side only) ─────────────────

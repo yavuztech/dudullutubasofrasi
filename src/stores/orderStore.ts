@@ -37,6 +37,7 @@ interface OrderStore {
     order: Omit<Order, 'id' | 'createdAt' | 'updatedAt'>
   ) => Promise<string>;
   updateOrderStatus: (id: string, status: OrderStatus) => Promise<void>;
+  updateOrderItems: (id: string, items: OrderItem[]) => Promise<void>;
   addItemsToOrder: (id: string, items: OrderItem[]) => Promise<void>;
 }
 
@@ -83,6 +84,13 @@ export const useOrderStore = create<OrderStore>((set) => ({
       status,
       updatedAt: serverTimestamp(),
     });
+  },
+
+  updateOrderItems: async (id, items) => {
+    const totalAmount = items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+    const update: Record<string, unknown> = { items, totalAmount, updatedAt: serverTimestamp() };
+    if (items.length === 0) update.status = 'cancelled';
+    await updateDoc(doc(db, 'orders', id), update);
   },
 
   addItemsToOrder: async (id, newItems) => {

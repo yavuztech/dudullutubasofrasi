@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { ShoppingCart, ChefHat, X, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ShoppingCart, ChefHat, X, CheckCircle2, AlertCircle, Pencil, Minus, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { onSnapshot, collection, query, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -20,7 +20,8 @@ export default function CustomerMenu() {
   const { qrToken } = useParams<{ qrToken: string }>();
   const { products, categories, subscribe, subscribeCategories } = useProductStore();
   const { tables, subscribe: subscribeTables, getTableByQR } = useTableStore();
-  const { createOrder } = useOrderStore();
+  const { createOrder, updateOrderItems } = useOrderStore();
+  const { createNotification } = useNotificationStore();
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
@@ -28,6 +29,9 @@ export default function CustomerMenu() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [showOrdersPanel, setShowOrdersPanel] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [editItems, setEditItems] = useState<Order['items']>([]);
+  const [editLoading, setEditLoading] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>('');
 
   const table = useMemo(() => getTableByQR(qrToken ?? ''), [tables, qrToken]);
@@ -132,6 +136,31 @@ export default function CustomerMenu() {
 
   const removeFromCart = (productId: string) => {
     setCart((prev) => prev.filter((i) => i.productId !== productId));
+  };
+
+  const openEditOrder = (order: Order) => {
+    setEditingOrder(order);
+    setEditItems(order.items.map((i) => ({ ...i })));
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingOrder || !table) return;
+    const validItems = editItems.filter((i) => i.quantity > 0);
+    setEditLoading(true);
+    try {
+      await updateOrderItems(editingOrder.id, validItems);
+      const isCancelled = validItems.length === 0;
+      const msg = isCancelled
+        ? `Masa ${table.number} — Müşteri siparişi iptal etti`
+        : `Masa ${table.number} — Müşteri siparişini düzenledi`;
+      await createNotification({ type: 'order_ready_waiter', orderId: editingOrder.id, tableId: table.id, tableNumber: table.number, message: msg, targetRole: 'waiter' });
+      toast.success(isCancelled ? 'Sipariş iptal edildi.' : 'Sipariş güncellendi.');
+      setEditingOrder(null);
+    } catch {
+      toast.error('İşlem başarısız. Tekrar deneyin.');
+    } finally {
+      setEditLoading(false);
+    }
   };
 
   const openConfirm = () => {
@@ -436,7 +465,18 @@ export default function CustomerMenu() {
             <div className="overflow-y-auto flex-1 p-4 flex flex-col gap-3">
               {/* Active orders */}
               {[...activeOrders].filter(o => !['delivered','paid','cancelled'].includes(o.status)).reverse().map((order) => (
-                <OrderTracker key={order.id} order={order} inline />
+                <div key={order.id}>
+                  <OrderTracker order={order} inline />
+                  {['pending', 'preparing'].includes(order.status) && (
+                    <button
+                      onClick={() => { setShowOrdersPanel(false); openEditOrder(order); }}
+                      className="mt-1.5 w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-orange-600 bg-orange-50 hover:bg-orange-100 py-2 rounded-xl transition-colors"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      Siparişi Düzenle / İptal Et
+                    </button>
+                  )}
+                </div>
               ))}
               {/* Delivered orders */}
               {activeOrders.filter(o => o.status === 'delivered').length > 0 && (
@@ -447,6 +487,61 @@ export default function CustomerMenu() {
                   ))}
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Order edit modal */}
+      {editingOrder && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setEditingOrder(null)} />
+          <div className="relative bg-white w-full max-w-sm rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[85vh] animate-slide-in">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100 flex-shrink-0">
+              <h2 className="font-bold text-gray-900">Siparişi Düzenle</h2>
+              <button onClick={() => setEditingOrder(null)} className="p-1 rounded-lg hover:bg-gray-100">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4 flex flex-col gap-3">
+              {editItems.map((item, idx) => (
+                <div key={item.productId} className="flex items-center gap-3 bg-gray-50 rounded-2xl p-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 text-sm truncate">{item.productName}</p>
+                    <p className="text-xs text-brand-600 font-bold">{formatCurrency(item.unitPrice * item.quantity)}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => setEditItems((prev) => prev.map((i, j) => j === idx ? { ...i, quantity: Math.max(0, i.quantity - 1) } : i).filter((_, j) => j !== idx || prev[idx].quantity - 1 > 0))}
+                      className="w-8 h-8 rounded-xl border border-gray-200 bg-white flex items-center justify-center hover:bg-red-50 hover:border-red-200"
+                    >
+                      {item.quantity === 1 ? <Trash2 className="w-3.5 h-3.5 text-red-500" /> : <Minus className="w-3.5 h-3.5 text-gray-600" />}
+                    </button>
+                    <span className="w-6 text-center font-bold text-sm">{item.quantity}</span>
+                    <button
+                      onClick={() => setEditItems((prev) => prev.map((i, j) => j === idx ? { ...i, quantity: i.quantity + 1 } : i))}
+                      className="w-8 h-8 rounded-xl border border-gray-200 bg-white flex items-center justify-center hover:bg-gray-50"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-gray-600" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {editItems.length === 0 && (
+                <div className="text-center py-6 text-gray-400">
+                  <Trash2 className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">Tüm ürünler kaldırıldı — sipariş iptal edilecek.</p>
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t border-gray-100 flex-shrink-0 flex gap-3">
+              <button onClick={() => setEditingOrder(null)} className="btn-secondary flex-1">Vazgeç</button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={editLoading}
+                className={`flex-1 flex items-center justify-center gap-2 ${editItems.length === 0 ? 'btn-danger' : 'btn-primary'} disabled:opacity-60`}
+              >
+                {editLoading ? 'Kaydediliyor…' : editItems.length === 0 ? 'Siparişi İptal Et' : 'Güncelle'}
+              </button>
             </div>
           </div>
         </div>

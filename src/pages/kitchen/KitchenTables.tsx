@@ -1,18 +1,14 @@
 import { useEffect, useState } from 'react';
-import toast from 'react-hot-toast';
-import { CreditCard, LayoutGrid, QrCode, X, Download } from 'lucide-react';
+import { LayoutGrid, QrCode, X, Download } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { useTableStore } from '../../stores/tableStore';
 import { useOrderStore } from '../../stores/orderStore';
-import { useNotificationStore } from '../../stores/notificationStore';
 import { tableStatusColor, tableStatusLabel, formatCurrency } from '../../utils/formatters';
 import type { Order, Table } from '../../types';
 
 export default function KitchenTables() {
-  const { tables, subscribe: subscribeTables, updateTableStatus } = useTableStore();
-  const { orders, subscribe: subscribeOrders, updateOrderStatus } = useOrderStore();
-  const { createNotification } = useNotificationStore();
-  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const { tables, subscribe: subscribeTables } = useTableStore();
+  const { orders, subscribe: subscribeOrders } = useOrderStore();
   const [qrTable, setQrTable] = useState<Table | null>(null);
   const baseUrl = window.location.origin;
 
@@ -24,29 +20,6 @@ export default function KitchenTables() {
 
   const getTableOrder = (tableId: string): Order | undefined =>
     orders.find((o) => o.tableId === tableId && ['pending', 'preparing', 'ready', 'delivered'].includes(o.status));
-
-  const handleCloseTable = async (tableId: string, tableNumber: number) => {
-    const order = getTableOrder(tableId);
-    if (!order) return;
-    setLoadingId(tableId);
-    try {
-      // Mark order as paid
-      await updateOrderStatus(order.id, 'paid');
-      // Mark table as needs_cleaning
-      await updateTableStatus(tableId, 'needs_cleaning', undefined);
-      // Notify waiter
-      await createNotification({
-        type: 'table_needs_cleaning',
-        tableId,
-        tableNumber,
-        message: `Masa ${tableNumber} kapandı — temizlenmesi gerekiyor 🧹`,
-        targetRole: 'waiter',
-      });
-      toast.success(`Masa ${tableNumber} kapatıldı, garson bilgilendirildi.`);
-    } finally {
-      setLoadingId(null);
-    }
-  };
 
   return (
     <div className="p-4 sm:p-6">
@@ -83,17 +56,6 @@ export default function KitchenTables() {
                   <p>{order.items.length} kalem</p>
                   <p className="font-semibold text-gray-900">{formatCurrency(order.totalAmount)}</p>
                 </div>
-              )}
-
-              {table.status === 'occupied' && order && (
-                <button
-                  onClick={() => handleCloseTable(table.id, table.number)}
-                  disabled={loadingId === table.id}
-                  className="mt-auto btn-success text-xs py-2 flex items-center justify-center gap-1.5 disabled:opacity-50"
-                >
-                  <CreditCard className="w-3.5 h-3.5" />
-                  {loadingId === table.id ? 'İşleniyor…' : 'Ödeme Al & Kapat'}
-                </button>
               )}
             </div>
           );

@@ -21,6 +21,9 @@ import KitchenTables   from './pages/kitchen/KitchenTables';
 import WaiterNotifications from './pages/waiter/WaiterNotifications';
 import WaiterTables        from './pages/waiter/WaiterTables';
 
+// Cashier
+import CashierPage from './pages/cashier/CashierPage';
+
 // Admin
 import AdminTables    from './pages/admin/AdminTables';
 import AdminStaff    from './pages/admin/AdminStaff';
@@ -78,6 +81,15 @@ function App() {
             <Route path="/kitchen/tables" element={
               <StaffLayout title="Mutfak — Masalar">
                 <KitchenTables />
+              </StaffLayout>
+            } />
+          </Route>
+
+          {/* ── Cashier routes (role: cashier | admin) ── */}
+          <Route element={<ProtectedRoute allowedRoles={['cashier', 'admin']} />}>
+            <Route path="/cashier" element={
+              <StaffLayout title="Kasa">
+                <CashierPage />
               </StaffLayout>
             } />
           </Route>

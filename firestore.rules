@@ -34,7 +34,7 @@ service cloud.firestore {
     match /tables/{tableId} {
       allow read:   if true;   // QR okuma için herkese açık
       allow create: if hasAnyRole(['kitchen', 'waiter', 'admin']);
-      allow update: if hasAnyRole(['kitchen', 'waiter', 'admin']);
+      allow update: if hasAnyRole(['kitchen', 'waiter', 'cashier', 'admin']);
       allow delete: if isAdmin();
     }
 
@@ -63,7 +63,7 @@ service cloud.firestore {
       allow get: if true;
 
       // Liste/sorgu: sadece personel (müşteri tüm siparişleri görmemeli)
-      allow list: if hasAnyRole(['kitchen', 'waiter', 'admin']);
+      allow list: if hasAnyRole(['kitchen', 'waiter', 'cashier', 'admin']);
 
       // müşteri kendi siparişini de sorgulayabilsin (telefon/sessionId filtreli)
       allow list: if
@@ -73,16 +73,23 @@ service cloud.firestore {
           ('tableId'       in request.query.filters[0])
         );
 
-      allow update: if hasAnyRole(['kitchen', 'waiter', 'admin']);
+      allow update: if hasAnyRole(['kitchen', 'waiter', 'cashier', 'admin'])
+                    // Müşteri kendi siparişini düzenleyebilir (iptal/miktar değişikliği)
+                    || (request.resource.data.diff(resource.data).affectedKeys()
+                          .hasOnly(['items', 'totalAmount', 'status', 'updatedAt']));
+      allow delete: if isAdmin();
+    }
+    match /notifications/{notifId} {
+      allow read:   if hasAnyRole(['kitchen', 'waiter', 'cashier', 'admin']);
+      allow create: if hasAnyRole(['kitchen', 'waiter', 'cashier', 'admin']) || true; // müşteri sipariş değişikliği bildirimi gönderebilir
+      allow update: if hasAnyRole(['kitchen', 'waiter', 'cashier', 'admin']);
       allow delete: if isAdmin();
     }
 
-    // ── Bildirimler ───────────────────────────────────────────────────────
-    match /notifications/{notifId} {
-      allow read:   if hasAnyRole(['kitchen', 'waiter', 'admin']);
-      allow create: if hasAnyRole(['kitchen', 'waiter', 'admin']);
-      allow update: if hasAnyRole(['kitchen', 'waiter', 'admin']);
-      allow delete: if isAdmin();
+    // ── Sipariş Kanalı Ayarları ───────────────────────────────────────────
+    match /settings/{settingId} {
+      allow read:  if true;        // müşteri sayfası ayarları okuyabilir
+      allow write: if isAdmin();   // sadece admin değiştirebilir
     }
 
     // ── Personel ──────────────────────────────────────────────────────────

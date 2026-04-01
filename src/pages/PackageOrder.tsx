@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { ChefHat, ShoppingCart, X, Search } from 'lucide-react';
+import { ChefHat, ShoppingCart, X, Search, MessageCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useProductStore } from '../stores/productStore';
 import { useOrderStore } from '../stores/orderStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import ProductCard from '../components/customer/ProductCard';
 import Cart from '../components/customer/Cart';
 import OrderTracker from '../components/customer/OrderTracker';
@@ -16,6 +17,7 @@ import type { CartItem, Order } from '../types';
 export default function PackageOrder() {
   const { products, categories, subscribe, subscribeCategories } = useProductStore();
   const { createOrder } = useOrderStore();
+  const { settings, subscribe: subscribeSettings } = useSettingsStore();
 
   const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState('');
@@ -29,6 +31,16 @@ export default function PackageOrder() {
   const [showNotifPrompt, setShowNotifPrompt] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>('');
 
+  // Direct checkout (SMS verification OFF)
+  const [showDirectModal, setShowDirectModal] = useState(false);
+  const [directKvkkAccepted, setDirectKvkkAccepted] = useState(false);
+
+  // WhatsApp checkout
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [waName, setWaName] = useState('');
+  const [waKvkkAccepted, setWaKvkkAccepted] = useState(false);
+  const [showWaKvkk, setShowWaKvkk] = useState(false);
+
   // Order tracking by phone
   const [trackingOpen, setTrackingOpen] = useState(false);
   const [trackPhone, setTrackPhone] = useState('');
@@ -40,7 +52,8 @@ export default function PackageOrder() {
   useEffect(() => {
     const u1 = subscribe();
     const u2 = subscribeCategories();
-    return () => { u1(); u2(); };
+    const u3 = subscribeSettings();
+    return () => { u1(); u2(); u3(); };
   }, []);
 
   useEffect(() => {
@@ -156,14 +169,39 @@ export default function PackageOrder() {
     trackUnsubRef.current = null;
   };
 
-  // Called from Cart's "Sipariş Ver" button
+  // Called from Cart's primary checkout button
   const handleCartCheckout = () => {
-    if (!verifiedPhone) {
-      setCartOpen(false);
+    setCartOpen(false);
+    if (!settings.phoneVerification) {
+      setDirectKvkkAccepted(false);
+      setShowDirectModal(true);
+    } else if (!verifiedPhone) {
       setShowPhoneModal(true);
     } else {
       placeOrder(verifiedPhone);
     }
+  };
+
+  // Called from Cart's WhatsApp button
+  const handleWhatsAppCheckout = () => {
+    setCartOpen(false);
+    setWaName(customerName);
+    setWaKvkkAccepted(false);
+    setShowWhatsAppModal(true);
+  };
+
+  // Open WhatsApp with pre-filled order message
+  const openWhatsApp = () => {
+    const lines = cart
+      .map((i) => `\u2022 ${i.productName} x${i.quantity} \u2013 ${formatCurrency(i.unitPrice * i.quantity)}`)
+      .join('\n');
+    const total = cart.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+    const nameStr = waName.trim() ? `\nAd: ${waName.trim()}` : '';
+    const message = `Merhaba! 🍽️ Tuba Sofras\u0131 Gel Al Sipari\u015fim:\n\n${lines}\n\nToplam: ${formatCurrency(total)}${nameStr}`;
+    const num = settings.whatsappNumber.replace(/\D/g, '');
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(message)}`, '_blank');
+    setShowWhatsAppModal(false);
+    setCart([]);
   };
 
   // Called after phone verified
@@ -188,7 +226,7 @@ export default function PackageOrder() {
         type: 'takeaway',
         items: orderItems,
         status: 'pending',
-        customerPhone: phone,
+        ...(phone ? { customerPhone: phone } : {}),
         customerName: customerName || undefined,
         totalAmount,
       });
@@ -323,6 +361,11 @@ export default function PackageOrder() {
           onClose={() => setCartOpen(false)}
           onCheckout={handleCartCheckout}
           checkoutLoading={checkoutLoading}
+          onWhatsAppCheckout={
+            settings.whatsappEnabled && settings.whatsappNumber
+              ? handleWhatsAppCheckout
+              : undefined
+          }
         />
       )}
 
@@ -381,11 +424,133 @@ export default function PackageOrder() {
         </div>
       )}
 
+      {/* Direct checkout modal (phone verification OFF) */}
+      {showDirectModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowDirectModal(false)} />
+          <div className="relative bg-white w-full max-w-sm rounded-t-3xl sm:rounded-2xl shadow-2xl p-6 animate-slide-in">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-gray-900">Siparişi Onayla</h3>
+              <button onClick={() => setShowDirectModal(false)} className="p-1 rounded-lg hover:bg-gray-100">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Adınız Soyadınız (İsteğe bağlı)</label>
+              <input
+                type="text"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Ad Soyad"
+                className="input"
+              />
+            </div>
+            <label className="flex items-start gap-2.5 mb-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={directKvkkAccepted}
+                onChange={(e) => setDirectKvkkAccepted(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-brand-600 flex-shrink-0"
+              />
+              <span className="text-xs text-gray-600 leading-relaxed">
+                Kişisel verilerimin (ad soyad) yalnızca sipariş takibi amacıyla işleneceğini bildiren{' '}
+                <button type="button" onClick={() => setShowKvkk(true)} className="text-brand-600 font-medium underline underline-offset-2">
+                  KVKK Aydınlatma Metni
+                </button>
+                'ni okudum ve onaylıyorum.
+              </span>
+            </label>
+            {!directKvkkAccepted && (
+              <p className="text-xs text-red-500 mb-3">Devam edebilmek için KVKK metnini onaylamanız gerekmektedir.</p>
+            )}
+            <button
+              onClick={() => { setShowDirectModal(false); placeOrder(''); }}
+              disabled={!directKvkkAccepted || checkoutLoading}
+              className="btn-primary w-full disabled:opacity-40"
+            >
+              {checkoutLoading ? 'Sipariş Veriliyor…' : 'Sipariş Ver'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* WhatsApp checkout modal */}
+      {showWhatsAppModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowWhatsAppModal(false)} />
+          <div className="relative bg-white w-full max-w-sm rounded-t-3xl sm:rounded-2xl shadow-2xl p-6 animate-slide-in">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <MessageCircle className="w-5 h-5 text-green-600" />
+                <h3 className="font-bold text-gray-900">WhatsApp ile Sipariş Ver</h3>
+              </div>
+              <button onClick={() => setShowWhatsAppModal(false)} className="p-1 rounded-lg hover:bg-gray-100">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              Seçtiğiniz ürünler WhatsApp mesajı olarak hazırlanacak. Mesajı doğrudan gönderebileceksiniz.
+            </p>
+
+            {/* Order summary */}
+            <div className="bg-gray-50 rounded-xl p-3 mb-4">
+              {cart.map((i) => (
+                <div key={i.productId} className="flex justify-between text-sm py-0.5">
+                  <span className="text-gray-700">{i.productName} <span className="text-gray-400">×{i.quantity}</span></span>
+                  <span className="font-medium text-gray-900">{formatCurrency(i.unitPrice * i.quantity)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between text-sm font-bold pt-2 mt-1 border-t border-gray-200">
+                <span>Toplam</span>
+                <span>{formatCurrency(cart.reduce((s, i) => s + i.unitPrice * i.quantity, 0))}</span>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Adınız Soyadınız (İsteğe bağlı)</label>
+              <input
+                type="text"
+                value={waName}
+                onChange={(e) => setWaName(e.target.value)}
+                placeholder="Ad Soyad"
+                className="input"
+              />
+            </div>
+
+            <label className="flex items-start gap-2.5 mb-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={waKvkkAccepted}
+                onChange={(e) => setWaKvkkAccepted(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-green-600 flex-shrink-0"
+              />
+              <span className="text-xs text-gray-600 leading-relaxed">
+                Kişisel verilerimin (ad soyad) sipariş amacıyla işleneceğini bildiren{' '}
+                <button type="button" onClick={() => setShowWaKvkk(true)} className="text-brand-600 font-medium underline underline-offset-2">
+                  KVKK Aydınlatma Metni
+                </button>
+                'ni okudum ve onaylıyorum.
+              </span>
+            </label>
+
+            <button
+              onClick={openWhatsApp}
+              disabled={!waKvkkAccepted}
+              className="w-full flex items-center justify-center gap-2 bg-green-600 disabled:opacity-40 text-white py-3 rounded-2xl font-semibold hover:bg-green-700 transition-colors text-sm"
+            >
+              <MessageCircle className="w-5 h-5" />
+              WhatsApp'ta Aç ve Gönder
+            </button>
+          </div>
+        </div>
+      )}
+
       {activeOrder && (
         <OrderTracker order={activeOrder} onClose={() => setActiveOrder(null)} />
       )}
 
       {showKvkk && <KvkkModal onClose={() => setShowKvkk(false)} />}
+      {showWaKvkk && <KvkkModal onClose={() => setShowWaKvkk(false)} />}
 
       {/* Order tracking modal */}
       {trackingOpen && (

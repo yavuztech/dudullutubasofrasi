@@ -1,4 +1,4 @@
-import { ShoppingCart, X, Minus, Plus, Trash2 } from 'lucide-react';
+import { ShoppingCart, X, Minus, Plus, Trash2, MessageCircle } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import type { CartItem } from '../../types';
 
@@ -8,6 +8,7 @@ interface Props {
   onRemove: (productId: string) => void;
   onClose: () => void;
   onCheckout: () => void;
+  onWhatsAppCheckout?: () => void;
   checkoutLoading?: boolean;
 }
 
@@ -17,6 +18,7 @@ export default function Cart({
   onRemove,
   onClose,
   onCheckout,
+  onWhatsAppCheckout,
   checkoutLoading,
 }: Props) {
   const total = items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
@@ -86,13 +88,24 @@ export default function Cart({
               <span className="text-gray-600 font-medium">Toplam</span>
               <span className="font-bold text-xl text-gray-900">{formatCurrency(total)}</span>
             </div>
-            <button
-              onClick={onCheckout}
-              disabled={checkoutLoading}
-              className="btn-primary w-full text-center"
-            >
-              {checkoutLoading ? 'Sipariş Veriliyor…' : 'Siparişi Onayla'}
-            </button>
+            <div className="flex flex-col gap-2">
+              {onWhatsAppCheckout && (
+                <button
+                  onClick={onWhatsAppCheckout}
+                  className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-3 rounded-2xl font-semibold text-sm hover:bg-green-700 active:scale-95 transition-all"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  WhatsApp ile Sipariş Ver
+                </button>
+              )}
+              <button
+                onClick={onCheckout}
+                disabled={checkoutLoading}
+                className="btn-primary w-full text-center"
+              >
+                {checkoutLoading ? 'Sipariş Veriliyor…' : 'Siparişi Onayla'}
+              </button>
+            </div>
           </div>
         )}
       </div>
