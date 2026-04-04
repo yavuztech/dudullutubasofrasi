@@ -359,7 +359,7 @@ export default function PackageOrder() {
           onUpdate={updateCart}
           onRemove={(id) => setCart((prev) => prev.filter((i) => i.productId !== id))}
           onClose={() => setCartOpen(false)}
-          onCheckout={handleCartCheckout}
+          onCheckout={settings.phoneVerification ? handleCartCheckout : undefined}
           checkoutLoading={checkoutLoading}
           onWhatsAppCheckout={
             settings.whatsappEnabled && settings.whatsappNumber

@@ -138,7 +138,8 @@ function App() {
           </Route>
 
           {/* ── Fallback ── */}
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/"      element={<Navigate to="/order" replace />} />
+          <Route path="/admin" element={<Navigate to="/login" replace />} />
           <Route path="*" element={
             <div className="min-h-screen flex items-center justify-center text-gray-500">
               <div className="text-center">

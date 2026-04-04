@@ -110,9 +110,11 @@ export interface NotificationRecord {
 
 // ─── Gel Al Settings (Firestore: settings/gel-al) ───
 export interface GelAlSettings {
-  phoneVerification: boolean;  // SMS OTP doğrulama aktif mi
-  whatsappEnabled: boolean;    // WhatsApp sipariş hattı aktif mi
-  whatsappNumber: string;      // Sipariş WhatsApp numarası (+90...)
+  phoneVerification: boolean;
+  whatsappEnabled: boolean;
+  whatsappNumber: string;
+  staffDiscount: boolean;       // Personel indirimi aktif mi
+  staffDiscountRate: number;    // 0-100 arası yüzde
 }
 
 // ─── Cart (client-side only) ─────────────────

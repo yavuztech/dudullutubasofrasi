@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { LayoutGrid, Sparkles, CheckCircle, AlertTriangle, QrCode, X, Download, ClipboardList, DoorOpen } from 'lucide-react';
+import { LayoutGrid, Sparkles, CheckCircle, AlertTriangle, QrCode, X, Download, ClipboardList, DoorOpen, ArrowLeftRight } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
@@ -8,6 +8,7 @@ import { useTableStore } from '../../stores/tableStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useProductStore } from '../../stores/productStore';
 import WaiterOrderSheet from '../../components/waiter/WaiterOrderSheet';
+import TableTransferModal from '../../components/shared/TableTransferModal';
 import { tableStatusColor, tableStatusLabel, formatCurrency } from '../../utils/formatters';
 import type { Table } from '../../types';
 
@@ -18,6 +19,7 @@ export default function WaiterTables() {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [qrTable, setQrTable] = useState<Table | null>(null);
   const [orderTable, setOrderTable] = useState<Table | null>(null);
+  const [transferTable, setTransferTable] = useState<Table | null>(null);
   const baseUrl = window.location.origin;
   const [unpaidWarning, setUnpaidWarning] = useState<{
     tableId: string; tableNumber: number; total: number;
@@ -157,14 +159,11 @@ export default function WaiterTables() {
       {/* All tables grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {tables.map((table) => {
-          const isCleaningState = table.status === 'needs_cleaning' || table.status === 'being_cleaned';
-          const canOrder = !isCleaningState;
+          const isBeingCleaned = table.status === 'being_cleaned';
           return (
             <div
               key={table.id}
-              className={`card flex flex-col gap-2 ${
-                isCleaningState ? 'opacity-50' : ''
-              }`}
+              className="card flex flex-col gap-2"
             >
               <div className="flex items-center justify-between">
                 <span className="font-bold text-gray-900">Masa {table.number}</span>
@@ -178,7 +177,7 @@ export default function WaiterTables() {
                 </div>
               </div>
               <p className="text-xs text-gray-400">{table.capacity} kişilik</p>
-              {canOrder && (
+              {!isBeingCleaned && (
                 <button
                   onClick={() => setOrderTable(table)}
                   className="w-full flex items-center justify-center gap-1.5 bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-semibold py-2 rounded-xl transition-colors"
@@ -197,6 +196,15 @@ export default function WaiterTables() {
                   {loadingId === table.id ? 'İşleniyor…' : 'Masayı Kapat'}
                 </button>
               )}
+              {table.status === 'occupied' && (
+                <button
+                  onClick={() => setTransferTable(table)}
+                  className="w-full flex items-center justify-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold py-2 rounded-xl transition-colors"
+                >
+                  <ArrowLeftRight className="w-3.5 h-3.5" />
+                  Aktar / Birleştir
+                </button>
+              )}
             </div>
           );
         })}
@@ -207,6 +215,13 @@ export default function WaiterTables() {
           <p className="text-lg font-semibold">Henüz masa tanımlanmamış</p>
           <p className="text-sm mt-1">Admin panelinden masa eklenebilir.</p>
         </div>
+      )}
+
+      {transferTable && (
+        <TableTransferModal
+          sourceTable={transferTable}
+          onClose={() => setTransferTable(null)}
+        />
       )}
 
       {/* QR Modal */}

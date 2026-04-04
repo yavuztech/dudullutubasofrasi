@@ -104,7 +104,9 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
         status: 'pending',
         totalAmount: cartTotal,
       });
-      if (table.status === 'available') await updateTableStatus(table.id, 'occupied', orderId);
+      if (table.status === 'available' || table.status === 'needs_cleaning' || table.status === 'being_cleaned') {
+        await updateTableStatus(table.id, 'occupied', orderId);
+      }
       toast.success(`Masa ${table.number} siparişi mutfağa gönderildi!`);
       setCart([]);
       setTab('existing');

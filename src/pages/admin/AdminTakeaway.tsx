@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Package, Phone, User, Search, Trash2, Settings, MessageCircle } from 'lucide-react';
+import { Package, Phone, User, Search, Trash2, Settings, MessageCircle, BadgePercent } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useOrderStore } from '../../stores/orderStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -12,6 +12,7 @@ export default function AdminTakeaway() {
   const [deletingPhone, setDeletingPhone] = useState<string | null>(null);
   const [waNumber, setWaNumber] = useState('');
   const [savingNumber, setSavingNumber] = useState(false);
+  const [discountRate, setDiscountRate] = useState('');
 
   useEffect(() => {
     const u1 = subscribe();
@@ -24,7 +25,11 @@ export default function AdminTakeaway() {
     setWaNumber(settings.whatsappNumber);
   }, [settings.whatsappNumber]);
 
-  const handleToggle = async (key: keyof Pick<GelAlSettings, 'phoneVerification' | 'whatsappEnabled'>) => {
+  useEffect(() => {
+    setDiscountRate(String(settings.staffDiscountRate ?? 20));
+  }, [settings.staffDiscountRate]);
+
+  const handleToggle = async (key: keyof Pick<GelAlSettings, 'phoneVerification' | 'whatsappEnabled' | 'staffDiscount'>) => {
     try {
       await updateSettings({ [key]: !settings[key] });
     } catch (e: unknown) {
@@ -67,6 +72,20 @@ export default function AdminTakeaway() {
       toast.error(`Kaydedilemedi${code ? ` [${code}]` : ''}. Tekrar deneyin.`);
     } finally {
       setSavingNumber(false);
+    }
+  };
+
+  const handleSaveDiscountRate = async () => {
+    const parsed = parseInt(discountRate, 10);
+    if (isNaN(parsed) || parsed < 0 || parsed > 100) {
+      toast.error('İndirim oranı 0–100 arasında olmalıdır.');
+      return;
+    }
+    try {
+      await updateSettings({ staffDiscountRate: parsed });
+      toast.success('İndirim oranı kaydedildi.');
+    } catch {
+      toast.error('Kaydedilemedi.');
     }
   };
 
@@ -193,6 +212,56 @@ export default function AdminTakeaway() {
             </>
           )}
         </div>
+      </div>
+
+      {/* ── Personel İndirimi ── */}
+      <div className="card p-4 mb-5">
+        <div className="flex items-center gap-2 mb-4">
+          <BadgePercent className="w-4 h-4 text-brand-600" />
+          <h3 className="font-bold text-gray-900 text-sm">Personel İndirimi</h3>
+        </div>
+        <div className="flex items-center justify-between py-3 border-b border-gray-100">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Personel İndirimi</p>
+            <p className="text-xs text-gray-500 mt-0.5">Kasa tarafında indirim uygulanabilsin</p>
+          </div>
+          <button
+            onClick={() => handleToggle('staffDiscount')}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              settings.staffDiscount ? 'bg-brand-600' : 'bg-gray-200'
+            }`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+              settings.staffDiscount ? 'translate-x-6' : 'translate-x-1'
+            }`} />
+          </button>
+        </div>
+        {settings.staffDiscount && (
+          <div className="pt-3">
+            <p className="text-sm text-gray-700 mb-2">İndirim Oranı (%)</p>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={discountRate}
+                onChange={(e) => setDiscountRate(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveDiscountRate()}
+                className="input flex-1 text-sm"
+                placeholder="Örn: 20"
+              />
+              <button
+                onClick={handleSaveDiscountRate}
+                className="btn-primary px-4 text-sm"
+              >
+                Kaydet
+              </button>
+            </div>
+            {settings.staffDiscountRate > 0 && (
+              <p className="text-xs text-green-700 mt-1.5">✓ Aktif oran: %{settings.staffDiscountRate}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Müşteri / KVKK Silme ── */}

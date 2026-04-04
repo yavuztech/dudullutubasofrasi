@@ -1,14 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
-  collection, query, where, getDocs,
-  onSnapshot, doc, updateDoc, serverTimestamp,
+  collection, query, where, onSnapshot,
+  doc, updateDoc, serverTimestamp, addDoc,
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useTableStore } from '../../stores/tableStore';
-import { Banknote, CreditCard, LayoutGrid, Package, X, ChevronRight, CheckCircle } from 'lucide-react';
+import { useProductStore } from '../../stores/productStore';
+import { useSettingsStore } from '../../stores/settingsStore';
+import {
+  Banknote, CreditCard, LayoutGrid, Package, X, CheckCircle,
+  Plus, Minus, Trash2, BadgePercent, ShoppingCart, ArrowLeftRight, Printer,
+} from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import toast from 'react-hot-toast';
-import type { Order, Table } from '../../types';
+import TableTransferModal from '../../components/shared/TableTransferModal';
+import ReceiptModal from '../../components/cashier/ReceiptModal';
+import type { Order, OrderItem, Table } from '../../types';
 
 type Tab = 'tables' | 'takeaway';
 
@@ -18,7 +25,6 @@ const STATUS_LABEL: Record<string, string> = {
   ready:     'Hazır',
   delivered: 'Teslim Edildi',
 };
-
 const STATUS_COLOR: Record<string, string> = {
   pending:   'bg-yellow-100 text-yellow-700',
   preparing: 'bg-blue-100 text-blue-700',
@@ -32,294 +38,711 @@ function toDate(v: unknown): Date {
   return new Date();
 }
 
+interface Bill { key: string; table: Table; orders: Order[]; sessionId: string | null; total: number; }
+
 export default function CashierPage() {
   const { tables, subscribe, newSession } = useTableStore();
+  const { products, categories, subscribe: subProducts, subscribeCategories } = useProductStore();
+  const { settings, subscribe: subSettings } = useSettingsStore();
+
   const [tab, setTab] = useState<Tab>('tables');
-
-  // Table bill modal
-  const [selectedTable, setSelectedTable] = useState<Table | null>(null);
-  const [tableOrders, setTableOrders] = useState<Order[]>([]);
-  const [loadingTableOrders, setLoadingTableOrders] = useState(false);
-
-  // Takeaway orders
+  const [activeTableOrders, setActiveTableOrders] = useState<Order[]>([]);
   const [takeawayOrders, setTakeawayOrders] = useState<Order[]>([]);
-
+  const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
+  const [transferBill, setTransferBill] = useState<Bill | null>(null);
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [receiptOrder, setReceiptOrder] = useState<Order | null>(null); // takeaway fiş
 
-  // Subscribe to table store
+  // Discount
+  const [applyDiscount, setApplyDiscount] = useState(false);
+
+  // New takeaway order
+  const [newTakeaway, setNewTakeaway] = useState(false);
+  const [ntName, setNtName] = useState('');
+  const [ntPhone, setNtPhone] = useState('');
+  const [ntCart, setNtCart] = useState<OrderItem[]>([]);
+  const [ntLoading, setNtLoading] = useState(false);
+  const [twDiscountOrders, setTwDiscountOrders] = useState<Set<string>>(new Set());
+
+  // Edit order items inline
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [editItems, setEditItems] = useState<OrderItem[]>([]);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editShowAdd, setEditShowAdd] = useState(false);
+
+  // Add product panel
+  const [addMode, setAddMode] = useState(false);
+  const [activeCategory, setActiveCategory] = useState('');
+  const [addCart, setAddCart] = useState<OrderItem[]>([]);
+  const [addLoading, setAddLoading] = useState(false);
+
   useEffect(() => {
-    const unsub = subscribe();
-    return unsub;
+    const u1 = subscribe();
+    const u2 = subProducts();
+    const u3 = subscribeCategories();
+    const u4 = subSettings();
+    return () => { u1(); u2(); u3(); u4(); };
   }, []);
 
-  // Subscribe to active takeaway orders
   useEffect(() => {
-    const q = query(
-      collection(db, 'orders'),
-      where('type', '==', 'takeaway'),
-      where('status', 'in', ['pending', 'preparing', 'ready', 'delivered']),
+    return onSnapshot(
+      query(collection(db, 'orders'), where('type', '==', 'table'), where('status', 'in', ['pending', 'preparing', 'ready', 'delivered'])),
+      (snap) => setActiveTableOrders(snap.docs.map((d) => ({ ...(d.data() as Omit<Order, 'id' | 'createdAt' | 'updatedAt'>), id: d.id, createdAt: toDate(d.data().createdAt), updatedAt: toDate(d.data().updatedAt) } as Order)))
     );
-    const unsub = onSnapshot(q, (snap) => {
-      const orders = snap.docs
-        .map((d) => ({
-          ...(d.data() as Omit<Order, 'id' | 'createdAt' | 'updatedAt'>),
-          id: d.id,
-          createdAt: toDate(d.data().createdAt),
-          updatedAt: toDate(d.data().updatedAt),
-        } as Order))
-        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-      setTakeawayOrders(orders);
-    });
-    return unsub;
   }, []);
 
-  const openTable = async (table: Table) => {
-    setSelectedTable(table);
-    setLoadingTableOrders(true);
-    try {
-      const snap = await getDocs(query(
-        collection(db, 'orders'),
-        where('tableId', '==', table.id),
-        where('status', 'in', ['pending', 'preparing', 'ready', 'delivered']),
-      ));
-      const orders = snap.docs.map((d) => ({
-        ...(d.data() as Omit<Order, 'id' | 'createdAt' | 'updatedAt'>),
-        id: d.id,
-        createdAt: toDate(d.data().createdAt),
-        updatedAt: toDate(d.data().updatedAt),
-      } as Order));
-      setTableOrders(orders);
-    } finally {
-      setLoadingTableOrders(false);
+  useEffect(() => {
+    return onSnapshot(
+      query(collection(db, 'orders'), where('type', '==', 'takeaway'), where('status', 'in', ['pending', 'preparing', 'ready', 'delivered'])),
+      (snap) => setTakeawayOrders(snap.docs.map((d) => ({ ...(d.data() as Omit<Order, 'id' | 'createdAt' | 'updatedAt'>), id: d.id, createdAt: toDate(d.data().createdAt), updatedAt: toDate(d.data().updatedAt) } as Order)).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()))
+    );
+  }, []);
+
+  const bills = useMemo((): Bill[] => {
+    const map = new Map<string, Order[]>();
+    for (const o of activeTableOrders) {
+      if (!o.tableId) continue;
+      const key = `${o.tableId}__${o.sessionId ?? ''}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(o);
     }
+    const result: Bill[] = [];
+    for (const [key, orders] of map.entries()) {
+      const table = tables.find((t) => t.id === orders[0].tableId);
+      if (!table) continue;
+      result.push({ key, table, orders: orders.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()), sessionId: orders[0].sessionId ?? null, total: orders.reduce((s, o) => s + o.totalAmount, 0) });
+    }
+    return result.sort((a, b) => a.table.number !== b.table.number ? a.table.number - b.table.number : (a.orders[0]?.createdAt.getTime() ?? 0) - (b.orders[0]?.createdAt.getTime() ?? 0));
+  }, [activeTableOrders, tables]);
+
+  // Sync selectedBill when orders update
+  useEffect(() => {
+    if (!selectedBill) return;
+    const updated = bills.find((b) => b.key === selectedBill.key);
+    if (!updated) setSelectedBill(null);
+    else setSelectedBill(updated);
+  }, [bills]);
+
+  // When opening bill clear discount state
+  const openBill = (bill: Bill) => {
+    setSelectedBill(bill);
+    setApplyDiscount(false);
+    setEditingOrder(null);
+    setAddMode(false);
+    setAddCart([]);
   };
 
-  const closeTableBill = async () => {
-    if (!selectedTable || tableOrders.length === 0) return;
-    setClosingId(selectedTable.id);
+  // ── Edit order ────────────────────────────────────────────────────────────
+  const openEdit = (order: Order) => {
+    setEditingOrder(order);
+    setEditItems(order.items.map((i) => ({ ...i })));
+    setAddMode(false);
+    setEditShowAdd(false);
+  };
+
+  const saveEdit = async () => {
+    if (!editingOrder) return;
+    const valid = editItems.filter((i) => i.quantity > 0);
+    setEditLoading(true);
     try {
-      await Promise.all(
-        tableOrders.map((o) =>
-          updateDoc(doc(db, 'orders', o.id), { status: 'paid', updatedAt: serverTimestamp() })
-        )
-      );
-      // Yeni oturum başlat — böylece eski siparişler yeni müşteriye karışmaz
-      await newSession(selectedTable.id);
-      await updateDoc(doc(db, 'tables', selectedTable.id), {
-        status: 'needs_cleaning',
+      const newTotal = valid.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+      if (valid.length === 0) {
+        await updateDoc(doc(db, 'orders', editingOrder.id), { status: 'cancelled', items: [], totalAmount: 0, updatedAt: serverTimestamp() });
+        toast.success('Sipariş iptal edildi.');
+      } else {
+        await updateDoc(doc(db, 'orders', editingOrder.id), { items: valid, totalAmount: newTotal, updatedAt: serverTimestamp() });
+        toast.success('Sipariş güncellendi.');
+      }
+      setEditingOrder(null);
+      setEditShowAdd(false);
+    } catch { toast.error('Güncellenemedi.'); }
+    finally { setEditLoading(false); }
+  };
+
+  // ── Add products ──────────────────────────────────────────────────────────
+  const availableProducts = useMemo(() => products.filter((p) => p.available), [products]);
+
+  const addToEdit = (p: typeof products[0]) => setEditItems((prev) => {
+    const ex = prev.find((i) => i.productId === p.id);
+    if (ex) return prev.map((i) => i.productId === p.id ? { ...i, quantity: i.quantity + 1 } : i);
+    return [...prev, { productId: p.id, productName: p.name, unitPrice: p.price, quantity: 1 }];
+  });
+  const removeFromEdit = (pid: string) => setEditItems((prev) => prev.map((i) => i.productId === pid ? { ...i, quantity: i.quantity - 1 } : i).filter((i) => i.quantity > 0));
+  const grouped = useMemo(() => {
+    const m: Record<string, typeof products> = {};
+    for (const p of availableProducts) { if (!m[p.category]) m[p.category] = []; m[p.category].push(p); }
+    return m;
+  }, [availableProducts]);
+
+  useEffect(() => {
+    if (categories.length > 0 && !activeCategory) setActiveCategory(categories[0].id);
+  }, [categories]);
+
+  const cartQty = (pid: string) => addCart.find((i) => i.productId === pid)?.quantity ?? 0;
+  const addToCart = (p: typeof products[0]) => setAddCart((prev) => {
+    const ex = prev.find((i) => i.productId === p.id);
+    if (ex) return prev.map((i) => i.productId === p.id ? { ...i, quantity: i.quantity + 1 } : i);
+    return [...prev, { productId: p.id, productName: p.name, unitPrice: p.price, quantity: 1 }];
+  });
+  const removeFromCart = (pid: string) => setAddCart((prev) => prev.map((i) => i.productId === pid ? { ...i, quantity: i.quantity - 1 } : i).filter((i) => i.quantity > 0));
+  const cartCount = addCart.reduce((s, i) => s + i.quantity, 0);
+  const cartTotal = addCart.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+
+  const sendAddCart = async () => {
+    if (!selectedBill || addCart.length === 0) return;
+    setAddLoading(true);
+    try {
+      await addDoc(collection(db, 'orders'), {
+        type: 'table',
+        tableId: selectedBill.table.id,
+        tableNumber: selectedBill.table.number,
+        sessionId: selectedBill.sessionId ?? selectedBill.table.sessionId,
+        items: addCart,
+        totalAmount: cartTotal,
+        status: 'pending',
+        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      toast.success(`Masa ${selectedTable.number} hesabı kapatıldı!`);
-      setSelectedTable(null);
-      setTableOrders([]);
-    } catch {
-      toast.error('Hesap kapatılamadı. Tekrar deneyin.');
-    } finally {
-      setClosingId(null);
-    }
+      toast.success(`${cartCount} ürün eklendi.`);
+      setAddCart([]);
+      setAddMode(false);
+    } catch { toast.error('Sipariş gönderilemedi.'); }
+    finally { setAddLoading(false); }
   };
 
-  const closeTakeawayBill = async (orderId: string) => {
+  // ── New takeaway order ─────────────────────────────────────────────────────
+  const ntQty = (pid: string) => ntCart.find((i) => i.productId === pid)?.quantity ?? 0;
+  const addToNt = (p: typeof products[0]) => setNtCart((prev) => {
+    const ex = prev.find((i) => i.productId === p.id);
+    if (ex) return prev.map((i) => i.productId === p.id ? { ...i, quantity: i.quantity + 1 } : i);
+    return [...prev, { productId: p.id, productName: p.name, unitPrice: p.price, quantity: 1 }];
+  });
+  const removeFromNt = (pid: string) => setNtCart((prev) => prev.map((i) => i.productId === pid ? { ...i, quantity: i.quantity - 1 } : i).filter((i) => i.quantity > 0));
+  const ntCount = ntCart.reduce((s, i) => s + i.quantity, 0);
+  const ntTotal = ntCart.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+
+  const submitNtOrder = async () => {
+    if (ntCart.length === 0) return;
+    setNtLoading(true);
+    try {
+      await addDoc(collection(db, 'orders'), {
+        type: 'takeaway',
+        tableId: null,
+        tableNumber: null,
+        sessionId: null,
+        customerName: ntName.trim() || 'Kasa Siparişi',
+        customerPhone: ntPhone.trim() || '',
+        items: ntCart,
+        totalAmount: ntTotal,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      toast.success('Paket sipariş oluşturuldu.');
+      setNtCart([]);
+      setNtName('');
+      setNtPhone('');
+      setNewTakeaway(false);
+    } catch { toast.error('Sipariş oluşturulamadı.'); }
+    finally { setNtLoading(false); }
+  };
+
+  // ── Close bill ────────────────────────────────────────────────────────────
+  const closeTableBill = async () => {
+    if (!selectedBill || selectedBill.orders.length === 0) return;
+    setClosingId(selectedBill.key);
+    try {
+      await Promise.all(selectedBill.orders.map((o) => updateDoc(doc(db, 'orders', o.id), { status: 'paid', updatedAt: serverTimestamp() })));
+      await newSession(selectedBill.table.id);
+      await updateDoc(doc(db, 'tables', selectedBill.table.id), { status: 'needs_cleaning', updatedAt: serverTimestamp() });
+      toast.success(`Masa ${selectedBill.table.number} hesabı kapatıldı!`);
+      setSelectedBill(null);
+    } catch { toast.error('Hesap kapatılamadı.'); }
+    finally { setClosingId(null); }
+  };
+
+  const toggleTwDiscount = (id: string) => setTwDiscountOrders((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const closeTakeawayBill = async (orderId: string, finalAmount?: number) => {
     setClosingId(orderId);
     try {
-      await updateDoc(doc(db, 'orders', orderId), { status: 'paid', updatedAt: serverTimestamp() });
+      const update: Record<string, unknown> = { status: 'paid', updatedAt: serverTimestamp() };
+      if (finalAmount !== undefined) update.totalAmount = finalAmount;
+      await updateDoc(doc(db, 'orders', orderId), update);
       toast.success('Ödeme alındı!');
-    } catch {
-      toast.error('İşlem başarısız. Tekrar deneyin.');
-    } finally {
-      setClosingId(null);
-    }
+      setTwDiscountOrders((prev) => { const n = new Set(prev); n.delete(orderId); return n; });
+    } catch { toast.error('İşlem başarısız.'); }
+    finally { setClosingId(null); }
   };
 
-  const billableTables = tables.filter((t) =>
-    t.status === 'occupied' || t.status === 'needs_cleaning' || t.status === 'being_cleaned'
-  );
-  const tableTotal = tableOrders.reduce((s, o) => s + o.totalAmount, 0);
+  // ── Discount calc ─────────────────────────────────────────────────────────
+  const rawTotal = selectedBill?.total ?? 0;
+  const discountRate = settings.staffDiscountRate ?? 0;
+  const discountAmount = applyDiscount && settings.staffDiscount ? Math.round(rawTotal * discountRate / 100) : 0;
+  const finalTotal = rawTotal - discountAmount;
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="p-4 sm:p-6">
-
       {/* Tabs */}
       <div className="flex gap-2 mb-5">
-        <button
-          onClick={() => setTab('tables')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
-            tab === 'tables'
-              ? 'bg-brand-600 text-white shadow-sm'
-              : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          <LayoutGrid className="w-4 h-4" />
-          Masalar
-          {billableTables.length > 0 && (
-            <span className={`text-xs rounded-full px-1.5 ${tab === 'tables' ? 'bg-white/25 text-white' : 'bg-brand-100 text-brand-700'}`}>
-              {billableTables.length}
-            </span>
-          )}
+        <button onClick={() => setTab('tables')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'tables' ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+          <LayoutGrid className="w-4 h-4" />Masalar
+          {bills.length > 0 && <span className={`text-xs rounded-full px-1.5 ${tab === 'tables' ? 'bg-white/25 text-white' : 'bg-brand-100 text-brand-700'}`}>{bills.length}</span>}
         </button>
-        <button
-          onClick={() => setTab('takeaway')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
-            tab === 'takeaway'
-              ? 'bg-brand-600 text-white shadow-sm'
-              : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          <Package className="w-4 h-4" />
-          Gel Al
-          {takeawayOrders.length > 0 && (
-            <span className={`text-xs rounded-full px-1.5 ${tab === 'takeaway' ? 'bg-white/25 text-white' : 'bg-brand-100 text-brand-700'}`}>
-              {takeawayOrders.length}
-            </span>
-          )}
+        <button onClick={() => setTab('takeaway')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'takeaway' ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+          <Package className="w-4 h-4" />Gel Al
+          {takeawayOrders.length > 0 && <span className={`text-xs rounded-full px-1.5 ${tab === 'takeaway' ? 'bg-white/25 text-white' : 'bg-brand-100 text-brand-700'}`}>{takeawayOrders.length}</span>}
         </button>
       </div>
 
-      {/* ── Masalar tab ── */}
-      {tab === 'tables' && (
-        billableTables.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <LayoutGrid className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <p className="font-semibold">Aktif masa yok</p>
-            <p className="text-sm mt-1">Şu an ödeme bekleyen masa bulunmuyor.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {billableTables.map((table) => (
-              <button
-                key={table.id}
-                onClick={() => openTable(table)}
-                className="card flex flex-col gap-2 text-left hover:border-brand-300 hover:shadow-md transition-all active:scale-[0.98]"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-gray-900 text-base">Masa {table.number}</span>
-                  <ChevronRight className="w-4 h-4 text-gray-400" />
-                </div>
-                <p className="text-xs text-gray-400">{table.capacity} kişilik</p>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <Banknote className="w-3.5 h-3.5 text-green-600" />
-                  <span className="text-xs font-semibold text-green-700">Hesap açık</span>
-                </div>
+      {/* Masalar */}
+      {tab === 'tables' && (bills.length === 0 ? (
+        <div className="text-center py-16 text-gray-400"><LayoutGrid className="w-12 h-12 mx-auto mb-3 opacity-30" /><p className="font-semibold">Aktif hesap yok</p></div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {bills.map((bill) => {
+            const same = bills.filter((b) => b.table.id === bill.table.id);
+            const label = same.length > 1 ? ` #${same.indexOf(bill) + 1}` : '';
+            return (
+              <button key={bill.key} onClick={() => openBill(bill)} className="card flex flex-col gap-2 text-left hover:border-brand-300 hover:shadow-md transition-all active:scale-[0.98]">
+                <div className="flex items-center justify-between"><span className="font-bold text-gray-900 text-base">Masa {bill.table.number}{label}</span><Banknote className="w-4 h-4 text-green-600" /></div>
+                <p className="text-xs text-gray-400">{bill.orders.length} sipariş</p>
+                <p className="font-bold text-brand-600">{formatCurrency(bill.total)}</p>
+                <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full self-start">Hesap açık</span>
               </button>
-            ))}
-          </div>
-        )
-      )}
+            );
+          })}
+        </div>
+      ))}
 
-      {/* ── Gel Al tab ── */}
+      {/* Gel Al */}
       {tab === 'takeaway' && (
-        takeawayOrders.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <p className="font-semibold">Bekleyen Gel Al siparişi yok</p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {takeawayOrders.map((order) => (
-              <div key={order.id} className="card flex flex-col gap-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-bold text-gray-900">{order.customerName || 'İsimsiz Müşteri'}</p>
-                    <p className="text-xs text-gray-500">{order.customerPhone}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {order.createdAt.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                  <span className={`badge text-xs flex-shrink-0 ${STATUS_COLOR[order.status] ?? ''}`}>
-                    {STATUS_LABEL[order.status] ?? order.status}
-                  </span>
-                </div>
-                <div className="text-xs text-gray-600 space-y-0.5 bg-gray-50 rounded-xl p-3">
-                  {order.items.map((item, i) => (
-                    <div key={i} className="flex justify-between">
-                      <span>{item.productName} <span className="text-gray-400">×{item.quantity}</span></span>
-                      <span className="font-medium">{formatCurrency(item.unitPrice * item.quantity)}</span>
+        <div className="flex flex-col gap-4">
+          {/* Yeni paket sipariş butonu / formu */}
+          {!newTakeaway ? (
+            <button
+              onClick={() => { setNewTakeaway(true); setNtCart([]); setNtName(''); setNtPhone(''); }}
+              className="flex items-center justify-center gap-2 py-3 border-2 border-dashed border-brand-300 hover:border-brand-500 text-brand-600 hover:text-brand-700 rounded-xl text-sm font-semibold transition-colors bg-brand-50/50"
+            >
+              <Plus className="w-4 h-4" /> Yeni Paket Sipariş
+            </button>
+          ) : (
+            <div className="border-2 border-brand-200 rounded-xl p-4 flex flex-col gap-3 bg-white shadow-sm">
+              <div className="flex items-center justify-between">
+                <p className="font-bold text-brand-700 flex items-center gap-1.5"><Package className="w-4 h-4" /> Yeni Paket Sipariş</p>
+                <button onClick={() => { setNewTakeaway(false); setNtCart([]); }} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-500" /></button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input value={ntName} onChange={(e) => setNtName(e.target.value)} placeholder="Müşteri adı (opsiyonel)" className="input py-2 text-sm col-span-2 sm:col-span-1" />
+                <input value={ntPhone} onChange={(e) => setNtPhone(e.target.value)} placeholder="Telefon (opsiyonel)" className="input py-2 text-sm col-span-2 sm:col-span-1" type="tel" />
+              </div>
+              <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                {categories.map((cat) => (
+                  <button key={cat.id} onClick={() => setActiveCategory(cat.id)} className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${activeCategory === cat.id ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-col gap-2 max-h-52 overflow-y-auto">
+                {(grouped[activeCategory] ?? []).map((p) => {
+                  const qty = ntQty(p.id);
+                  return (
+                    <div key={p.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                      <p className="flex-1 text-sm font-medium text-gray-900 truncate">{p.name}</p>
+                      <p className="text-xs text-brand-600 font-semibold flex-shrink-0">{formatCurrency(p.price)}</p>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {qty > 0 ? (
+                          <>
+                            <button onClick={() => removeFromNt(p.id)} className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-red-50"><Minus className="w-3 h-3" /></button>
+                            <span className="w-4 text-center text-sm font-bold">{qty}</span>
+                          </>
+                        ) : <span className="w-10" />}
+                        <button onClick={() => addToNt(p)} className="w-6 h-6 bg-brand-600 text-white rounded-lg flex items-center justify-center hover:bg-brand-700"><Plus className="w-3 h-3" /></button>
+                      </div>
                     </div>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between pt-1">
-                  <span className="font-bold text-gray-900 text-base">{formatCurrency(order.totalAmount)}</span>
-                  <button
-                    onClick={() => closeTakeawayBill(order.id)}
-                    disabled={closingId === order.id}
-                    className="btn-primary py-2 px-4 text-sm flex items-center gap-1.5"
-                  >
-                    <CreditCard className="w-4 h-4" />
-                    {closingId === order.id ? 'İşleniyor…' : 'Ödendi'}
+                  );
+                })}
+              </div>
+              {ntCount > 0 && (
+                <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                  <ShoppingCart className="w-4 h-4 text-brand-600 flex-shrink-0" />
+                  <span className="text-sm text-gray-600 flex-1">{ntCount} ürün • {formatCurrency(ntTotal)}</span>
+                  <button onClick={submitNtOrder} disabled={ntLoading} className="btn-primary px-4 py-2 text-sm flex items-center gap-1.5 disabled:opacity-60">
+                    {ntLoading ? 'Gönderiliyor…' : 'Siparişi Gönder'}
                   </button>
                 </div>
+              )}
+            </div>
+          )}
+
+          {takeawayOrders.length === 0 ? (
+            <div className="text-center py-10 text-gray-400"><Package className="w-12 h-12 mx-auto mb-3 opacity-30" /><p className="font-semibold">Bekleyen Gel Al siparişi yok</p></div>
+          ) : (
+            <div className="flex flex-col gap-3">
+          {takeawayOrders.map((order) => {
+            const isTwEditing = editingOrder?.id === order.id;
+            const hasTwDiscount = twDiscountOrders.has(order.id) && !!settings.staffDiscount;
+            const twDiscountAmount = hasTwDiscount ? Math.round(order.totalAmount * discountRate / 100) : 0;
+            const twFinalAmount = order.totalAmount - twDiscountAmount;
+            return (
+            <div key={order.id} className="card flex flex-col gap-3">
+              <div className="flex items-start justify-between gap-2">
+                <div><p className="font-bold text-gray-900">{order.customerName || 'İsimsiz Müşteri'}</p><p className="text-xs text-gray-500">{order.customerPhone}</p></div>
+                <div className="flex items-center gap-2">
+                  {!isTwEditing && (
+                    <button onClick={() => openEdit(order)} className="text-xs text-orange-600 bg-orange-50 hover:bg-orange-100 px-2.5 py-1 rounded-lg font-semibold transition-colors">
+                      Düzenle
+                    </button>
+                  )}
+                  <span className={`badge text-xs flex-shrink-0 ${STATUS_COLOR[order.status] ?? ''}`}>{STATUS_LABEL[order.status] ?? order.status}</span>
+                </div>
               </div>
-            ))}
-          </div>
-        )
+
+              {isTwEditing ? (
+                <div className="flex flex-col gap-2">
+                  {editItems.map((item, idx) => (
+                    <div key={item.productId} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                      <p className="flex-1 text-sm font-medium text-gray-900 truncate">{item.productName}</p>
+                      <p className="text-xs text-gray-500 flex-shrink-0">{formatCurrency(item.unitPrice)}</p>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button onClick={() => setEditItems((prev) => prev.map((i, j) => j === idx ? { ...i, quantity: i.quantity - 1 } : i).filter((i) => i.quantity > 0))} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-red-50">
+                          {item.quantity === 1 ? <Trash2 className="w-3 h-3 text-red-500" /> : <Minus className="w-3 h-3 text-gray-600" />}
+                        </button>
+                        <span className="w-5 text-center font-bold text-sm">{item.quantity}</span>
+                        <button onClick={() => setEditItems((prev) => prev.map((i, j) => j === idx ? { ...i, quantity: i.quantity + 1 } : i))} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50">
+                          <Plus className="w-3 h-3 text-gray-600" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {editItems.length === 0 && <p className="text-xs text-center text-orange-600 py-1">Tüm ürünler kaldırıldı — sipariş iptal edilecek.</p>}
+
+                  {/* Ürün ekleme paneli */}
+                  {editShowAdd ? (
+                    <div className="border border-gray-200 rounded-xl p-3 flex flex-col gap-2 bg-gray-50">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-bold text-gray-600">Ürün Ekle</p>
+                        <button onClick={() => setEditShowAdd(false)} className="p-0.5 rounded hover:bg-gray-200"><X className="w-3.5 h-3.5 text-gray-500" /></button>
+                      </div>
+                      <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+                        {categories.map((cat) => (
+                          <button key={cat.id} onClick={() => setActiveCategory(cat.id)} className={`flex-shrink-0 px-2.5 py-0.5 rounded-full text-xs font-semibold transition-colors ${activeCategory === cat.id ? 'bg-brand-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>
+                            {cat.name}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex flex-col gap-1 max-h-44 overflow-y-auto">
+                        {(grouped[activeCategory] ?? []).map((p) => {
+                          const qty = editItems.find((i) => i.productId === p.id)?.quantity ?? 0;
+                          return (
+                            <div key={p.id} className="flex items-center gap-2 bg-white rounded-lg p-2">
+                              <p className="flex-1 text-xs font-medium text-gray-900 truncate">{p.name}</p>
+                              <p className="text-xs text-brand-600 font-semibold flex-shrink-0">{formatCurrency(p.price)}</p>
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                {qty > 0 ? (
+                                  <>
+                                    <button onClick={() => removeFromEdit(p.id)} className="w-6 h-6 rounded border border-gray-200 flex items-center justify-center hover:bg-red-50"><Minus className="w-3 h-3" /></button>
+                                    <span className="w-4 text-center text-xs font-bold">{qty}</span>
+                                  </>
+                                ) : <span className="w-10" />}
+                                <button onClick={() => addToEdit(p)} className="w-6 h-6 bg-brand-600 text-white rounded flex items-center justify-center hover:bg-brand-700"><Plus className="w-3 h-3" /></button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setEditShowAdd(true)}
+                      className="w-full flex items-center justify-center gap-1.5 border border-dashed border-gray-300 hover:border-brand-400 text-gray-500 hover:text-brand-600 rounded-lg py-2 text-xs font-semibold transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Ürün Ekle
+                    </button>
+                  )}
+
+                  <div className="flex gap-2 mt-1">
+                    <button onClick={() => { setEditingOrder(null); setEditShowAdd(false); }} className="btn-secondary flex-1 py-1.5 text-xs">Vazgeç</button>
+                    <button onClick={saveEdit} disabled={editLoading} className={`flex-1 py-1.5 text-xs flex items-center justify-center gap-1 disabled:opacity-60 ${editItems.length === 0 ? 'bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold' : 'btn-primary'}`}>
+                      {editLoading ? 'Kaydediliyor…' : editItems.length === 0 ? 'İptal Et' : 'Kaydet'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-xs text-gray-600 space-y-0.5 bg-gray-50 rounded-xl p-3">
+                  {order.items.map((item, i) => (<div key={i} className="flex justify-between"><span>{item.productName} <span className="text-gray-400">×{item.quantity}</span></span><span className="font-medium">{formatCurrency(item.unitPrice * item.quantity)}</span></div>))}
+                </div>
+              )}
+
+              {!isTwEditing && (
+                <div className="flex flex-col gap-2 pt-1">
+                  {settings.staffDiscount && (
+                    <button
+                      onClick={() => toggleTwDiscount(order.id)}
+                      className="flex items-center justify-between px-3 py-2 bg-orange-50 rounded-xl w-full"
+                    >
+                      <div className="flex items-center gap-2">
+                        <BadgePercent className="w-4 h-4 text-orange-600" />
+                        <span className="text-sm font-semibold text-orange-700">Personel İndirimi (%{discountRate})</span>
+                      </div>
+                      <div className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${hasTwDiscount ? 'bg-orange-500' : 'bg-gray-200'}`}>
+                        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${hasTwDiscount ? 'translate-x-4' : 'translate-x-1'}`} />
+                      </div>
+                    </button>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      {hasTwDiscount && twDiscountAmount > 0 && (
+                        <p className="text-xs text-gray-400 line-through">{formatCurrency(order.totalAmount)}</p>
+                      )}
+                      <span className="font-bold text-gray-900 text-base">{formatCurrency(twFinalAmount)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setReceiptOrder(order)}
+                        className="p-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600"
+                        title="Fiş Yazdır"
+                      >
+                        <Printer className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => closeTakeawayBill(order.id, hasTwDiscount ? twFinalAmount : undefined)} disabled={closingId === order.id} className="btn-primary py-2 px-4 text-sm flex items-center gap-1.5 disabled:opacity-50">
+                        <CreditCard className="w-4 h-4" />{closingId === order.id ? 'İşleniyor…' : 'Ödendi'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            );
+          })}
+            </div>
+          )}
+        </div>
       )}
 
       {/* ── Masa hesap modal ── */}
-      {selectedTable && (
+      {selectedBill && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setSelectedTable(null)} />
-          <div className="relative bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl animate-slide-in flex flex-col max-h-[85vh]">
+          <div className="absolute inset-0 bg-black/50" onClick={() => { setSelectedBill(null); setEditingOrder(null); setAddMode(false); setAddCart([]); }} />
+          <div className="relative bg-white w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl animate-slide-in flex flex-col max-h-[92vh]">
 
-            {/* Modal header */}
+            {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-gray-100 flex-shrink-0">
               <div>
-                <h3 className="font-bold text-gray-900 text-lg">Masa {selectedTable.number}</h3>
-                <p className="text-xs text-gray-500">Hesap detayı</p>
+                <h3 className="font-bold text-gray-900 text-lg">Masa {selectedBill.table.number}</h3>
+                <p className="text-xs text-gray-500">{selectedBill.orders.length} sipariş • Hesap detayı</p>
               </div>
-              <button onClick={() => setSelectedTable(null)} className="p-2 rounded-xl hover:bg-gray-100">
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setTransferBill(selectedBill)}
+                  title="Aktar / Birleştir"
+                  className="p-2 rounded-xl hover:bg-blue-50 text-blue-600"
+                >
+                  <ArrowLeftRight className="w-4 h-4" />
+                </button>
+                <button onClick={() => { setSelectedBill(null); setEditingOrder(null); setAddMode(false); setAddCart([]); }} className="p-2 rounded-xl hover:bg-gray-100">
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
             </div>
 
-            {/* Order list */}
-            <div className="flex-1 overflow-y-auto p-4">
-              {loadingTableOrders ? (
-                <div className="flex justify-center py-10">
-                  <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
-                </div>
-              ) : tableOrders.length === 0 ? (
-                <p className="text-center text-gray-400 py-10">Bu masaya ait aktif sipariş bulunamadı.</p>
-              ) : (
-                <div className="space-y-3">
-                  {tableOrders.map((order) => (
-                    <div key={order.id} className="bg-gray-50 rounded-xl p-3">
-                      <p className="text-xs text-gray-400 mb-2">
-                        {order.createdAt.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                      {order.items.map((item, i) => (
-                        <div key={i} className="flex justify-between text-sm py-0.5">
-                          <span className="text-gray-700">
-                            {item.productName} <span className="text-gray-400">×{item.quantity}</span>
-                          </span>
-                          <span className="font-medium text-gray-900">
-                            {formatCurrency(item.unitPrice * item.quantity)}
-                          </span>
-                        </div>
-                      ))}
+            {/* Siparişler */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {selectedBill.orders.map((order) => {
+                const isEditing = editingOrder?.id === order.id;
+                return (
+                  <div key={order.id} className="bg-gray-50 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`badge text-xs ${STATUS_COLOR[order.status] ?? ''}`}>{STATUS_LABEL[order.status] ?? order.status}</span>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-gray-400">{order.createdAt.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</p>
+                        {!isEditing && !addMode && (
+                          <button onClick={() => openEdit(order)} className="text-xs text-orange-600 bg-orange-50 hover:bg-orange-100 px-2.5 py-1 rounded-lg font-semibold transition-colors">
+                            Düzenle
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  ))}
+
+                    {isEditing ? (
+                      <div className="flex flex-col gap-2">
+                        {editItems.map((item, idx) => (
+                          <div key={item.productId} className="flex items-center gap-2 bg-white rounded-lg p-2">
+                            <p className="flex-1 text-sm font-medium text-gray-900 truncate">{item.productName}</p>
+                            <p className="text-xs text-gray-500 flex-shrink-0">{formatCurrency(item.unitPrice)}</p>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <button onClick={() => setEditItems((prev) => prev.map((i, j) => j === idx ? { ...i, quantity: i.quantity - 1 } : i).filter((i) => i.quantity > 0))} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-red-50">
+                                {item.quantity === 1 ? <Trash2 className="w-3 h-3 text-red-500" /> : <Minus className="w-3 h-3 text-gray-600" />}
+                              </button>
+                              <span className="w-5 text-center font-bold text-sm">{item.quantity}</span>
+                              <button onClick={() => setEditItems((prev) => prev.map((i, j) => j === idx ? { ...i, quantity: i.quantity + 1 } : i))} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50">
+                                <Plus className="w-3 h-3 text-gray-600" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        {editItems.length === 0 && <p className="text-xs text-center text-orange-600 py-1">Tüm ürünler kaldırıldı — sipariş iptal edilecek.</p>}
+                        <div className="flex gap-2 mt-1">
+                          <button onClick={() => setEditingOrder(null)} className="btn-secondary flex-1 py-1.5 text-xs">Vazgeç</button>
+                          <button onClick={saveEdit} disabled={editLoading} className={`flex-1 py-1.5 text-xs flex items-center justify-center gap-1 disabled:opacity-60 ${editItems.length === 0 ? 'bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold' : 'btn-primary'}`}>
+                            {editLoading ? 'Kaydediliyor…' : editItems.length === 0 ? 'İptal Et' : 'Kaydet'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      order.items.map((item, i) => (
+                        <div key={i} className="flex justify-between text-sm py-0.5">
+                          <span className="text-gray-700">{item.productName} <span className="text-gray-400">×{item.quantity}</span></span>
+                          <span className="font-medium text-gray-900">{formatCurrency(item.unitPrice * item.quantity)}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Ürün Ekle butonu (düzenleme yoksa) */}
+              {!editingOrder && !addMode && (
+                <button onClick={() => { setAddMode(true); setAddCart([]); }} className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 hover:border-brand-400 text-gray-500 hover:text-brand-600 rounded-xl py-3 text-sm font-semibold transition-colors">
+                  <Plus className="w-4 h-4" /> Ürün Ekle
+                </button>
+              )}
+
+              {/* Ürün ekleme paneli */}
+              {addMode && (
+                <div className="border-2 border-brand-200 rounded-xl p-3 flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-bold text-brand-700">Ürün Ekle</p>
+                    <button onClick={() => { setAddMode(false); setAddCart([]); }} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-500" /></button>
+                  </div>
+                  {/* Kategori seçimi */}
+                  <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                    {categories.map((cat) => (
+                      <button key={cat.id} onClick={() => setActiveCategory(cat.id)} className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${activeCategory === cat.id ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                        {cat.name}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Ürün listesi */}
+                  <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                    {(grouped[activeCategory] ?? []).map((p) => {
+                      const qty = cartQty(p.id);
+                      return (
+                        <div key={p.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                          <p className="flex-1 text-sm font-medium text-gray-900 truncate">{p.name}</p>
+                          <p className="text-xs text-brand-600 font-semibold flex-shrink-0">{formatCurrency(p.price)}</p>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {qty > 0 ? (
+                              <>
+                                <button onClick={() => removeFromCart(p.id)} className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-100"><Minus className="w-3 h-3" /></button>
+                                <span className="w-4 text-center text-sm font-bold">{qty}</span>
+                              </>
+                            ) : <span className="w-10" />}
+                            <button onClick={() => addToCart(p)} className="w-6 h-6 bg-brand-600 text-white rounded-lg flex items-center justify-center hover:bg-brand-700"><Plus className="w-3 h-3" /></button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {cartCount > 0 && (
+                    <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
+                      <ShoppingCart className="w-4 h-4 text-brand-600 flex-shrink-0" />
+                      <span className="text-sm text-gray-600 flex-1">{cartCount} ürün • {formatCurrency(cartTotal)}</span>
+                      <button onClick={sendAddCart} disabled={addLoading} className="btn-primary px-4 py-2 text-xs flex items-center gap-1.5 disabled:opacity-60">
+                        {addLoading ? 'Gönderiliyor…' : 'Mutfağa Gönder'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-gray-100 flex-shrink-0">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-gray-600 font-medium">Toplam</span>
-                <span className="text-2xl font-extrabold text-gray-900">{formatCurrency(tableTotal)}</span>
+            <div className="p-4 border-t border-gray-100 flex-shrink-0 space-y-3">
+              {/* Personel indirimi */}
+              {settings.staffDiscount && (
+                <button
+                  onClick={() => setApplyDiscount((v) => !v)}
+                  className="flex items-center justify-between cursor-pointer px-3 py-2.5 bg-orange-50 rounded-xl w-full"
+                >
+                  <div className="flex items-center gap-2">
+                    <BadgePercent className="w-4 h-4 text-orange-600" />
+                    <span className="text-sm font-semibold text-orange-700">Personel İndirimi (%{discountRate})</span>
+                  </div>
+                  <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${applyDiscount ? 'bg-orange-500' : 'bg-gray-200'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${applyDiscount ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </div>
+                </button>
+              )}
+
+              {/* Toplam */}
+              <div>
+                {applyDiscount && discountAmount > 0 && (
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span className="text-gray-400 line-through">{formatCurrency(rawTotal)}</span>
+                    <span className="text-orange-600 font-semibold">-%{discountRate} = -{formatCurrency(discountAmount)}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-gray-600 font-medium">Toplam</span>
+                  <span className="text-2xl font-extrabold text-gray-900">{formatCurrency(finalTotal)}</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowReceipt(true)}
+                    className="flex-shrink-0 py-3.5 px-4 rounded-2xl border-2 border-gray-200 hover:bg-gray-50 flex items-center gap-1.5 text-gray-700 font-semibold"
+                  >
+                    <Printer className="w-5 h-5" />
+                    Fiş
+                  </button>
+                  <button
+                    onClick={closeTableBill}
+                    disabled={!!closingId || !!editingOrder || addMode}
+                    className="btn-primary flex-1 py-3.5 text-base flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <CheckCircle className="w-5 h-5" />
+                    {closingId ? 'İşleniyor…' : 'Hesabı Kapat'}
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={closeTableBill}
-                disabled={closingId === selectedTable.id || tableOrders.length === 0 || loadingTableOrders}
-                className="btn-primary w-full py-3.5 text-base flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                <CheckCircle className="w-5 h-5" />
-                {closingId === selectedTable.id ? 'İşleniyor…' : 'Hesabı Kapat'}
-              </button>
             </div>
 
           </div>
         </div>
+      )}
+
+      {transferBill && (
+        <TableTransferModal
+          sourceTable={transferBill.table}
+          onClose={() => setTransferBill(null)}
+        />
+      )}
+
+      {showReceipt && selectedBill && (
+        <ReceiptModal
+          tableNumber={selectedBill.table.number}
+          orders={selectedBill.orders}
+          discountRate={discountRate}
+          discountApplied={applyDiscount && !!settings.staffDiscount}
+          onClose={() => setShowReceipt(false)}
+        />
+      )}
+
+      {receiptOrder && (
+        <ReceiptModal
+          customerName={receiptOrder.customerName}
+          customerPhone={receiptOrder.customerPhone}
+          orders={[receiptOrder]}
+          discountRate={discountRate}
+          discountApplied={twDiscountOrders.has(receiptOrder.id) && !!settings.staffDiscount}
+          onClose={() => setReceiptOrder(null)}
+        />
       )}
     </div>
   );

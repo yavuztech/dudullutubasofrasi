@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
+import { doc, writeBatch } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 import { useOrderStore } from '../../stores/orderStore';
 import { formatCurrency } from '../../utils/formatters';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { ChevronDown, ChevronUp, Package, UtensilsCrossed } from 'lucide-react';
+import { ChevronDown, ChevronUp, Package, UtensilsCrossed, Trash2, CalendarDays } from 'lucide-react';
+import toast from 'react-hot-toast';
 import type { Order, OrderStatus } from '../../types';
 
 const STATUS_LABELS: Record<OrderStatus, { label: string; color: string }> = {
@@ -30,6 +33,9 @@ export default function AdminOrders() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
   const [dateFilter, setDateFilter] = useState<DateFilter>('today');
+  const [customDate, setCustomDate] = useState(''); // YYYY-MM-DD
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
     // Subscribe to delivered + paid + cancelled (closed orders)
@@ -37,10 +43,14 @@ export default function AdminOrders() {
     return unsub;
   }, []);
 
-  const from = startOf(dateFilter);
+  const from = customDate
+    ? new Date(customDate + 'T00:00:00')
+    : startOf(dateFilter);
+  const to = customDate ? new Date(customDate + 'T23:59:59') : null;
+
   const filtered = orders.filter((o) => {
     const matchStatus = statusFilter === 'all' || o.status === statusFilter;
-    const matchDate   = !from || o.createdAt >= from;
+    const matchDate = !from || (o.createdAt >= from && (!to || o.createdAt <= to));
     return matchStatus && matchDate;
   });
 
@@ -52,24 +62,66 @@ export default function AdminOrders() {
 
   const toggle = (id: string) => setExpandedId((prev) => (prev === id ? null : id));
 
+  const clearHistory = async () => {
+    setClearing(true);
+    try {
+      const toDelete = filtered;
+      const chunks: typeof toDelete[] = [];
+      for (let i = 0; i < toDelete.length; i += 400) chunks.push(toDelete.slice(i, i + 400));
+      for (const chunk of chunks) {
+        const batch = writeBatch(db);
+        chunk.forEach((o) => batch.delete(doc(db, 'orders', o.id)));
+        await batch.commit();
+      }
+      toast.success(`${toDelete.length} sipariş silindi.`);
+      setShowClearConfirm(false);
+    } catch {
+      toast.error('Temizleme başarısız.');
+    } finally {
+      setClearing(false);
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6">
-      <h2 className="font-bold text-gray-800 mb-4">Sipariş Geçmişi</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="font-bold text-gray-800">Sipariş Geçmişi</h2>
+        <button
+          onClick={() => setShowClearConfirm(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
+        >
+          <Trash2 className="w-4 h-4" /> Geçmişi Temizle
+        </button>
+      </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-3">
         {(['today', 'week', 'month', 'all'] as DateFilter[]).map((d) => (
           <button
             key={d}
-            onClick={() => setDateFilter(d)}
+            onClick={() => { setDateFilter(d); setCustomDate(''); }}
             className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-              dateFilter === d ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600'
+              dateFilter === d && !customDate ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600'
             }`}
           >
             {{ today: 'Bugün', week: 'Son 7 Gün', month: 'Bu Ay', all: 'Tümü' }[d]}
           </button>
         ))}
-        <div className="w-px bg-gray-200 self-stretch mx-1" />
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-gray-200 bg-white text-sm">
+          <CalendarDays className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+          <input
+            type="date"
+            value={customDate}
+            onChange={(e) => { setCustomDate(e.target.value); }}
+            className="text-sm text-gray-700 bg-transparent outline-none cursor-pointer"
+          />
+          {customDate && (
+            <button onClick={() => setCustomDate('')} className="text-gray-400 hover:text-gray-600 ml-0.5">×</button>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2 mb-4">
+        <div className="w-px bg-gray-200 self-stretch" />
         {(['all', 'delivered', 'paid', 'cancelled'] as const).map((s) => (
           <button
             key={s}
@@ -119,6 +171,37 @@ export default function AdminOrders() {
               onToggle={() => toggle(order.id)}
             />
           ))}
+        </div>
+      )}
+
+      {/* Clear history confirm modal */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowClearConfirm(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl p-6 mx-4 max-w-sm w-full">
+            <div className="flex items-center justify-center w-12 h-12 bg-red-100 rounded-full mx-auto mb-4">
+              <Trash2 className="w-6 h-6 text-red-600" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 text-center mb-2">Geçmişi Temizle</h3>
+            <p className="text-sm text-gray-500 text-center mb-6">
+              Seçili filtredeki <strong>{filtered.length} sipariş</strong> kalıcı olarak silinecek. Bu işlem geri alınamaz.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="btn-secondary flex-1 py-2.5 text-sm"
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={clearHistory}
+                disabled={clearing}
+                className="btn-danger flex-1 py-2.5 text-sm disabled:opacity-60"
+              >
+                {clearing ? 'Siliniyor…' : 'Evet, Sil'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -7,7 +7,7 @@ interface Props {
   onUpdate: (productId: string, delta: number) => void;
   onRemove: (productId: string) => void;
   onClose: () => void;
-  onCheckout: () => void;
+  onCheckout?: () => void;
   onWhatsAppCheckout?: () => void;
   checkoutLoading?: boolean;
 }
@@ -98,13 +98,15 @@ export default function Cart({
                   WhatsApp ile Sipariş Ver
                 </button>
               )}
-              <button
-                onClick={onCheckout}
-                disabled={checkoutLoading}
-                className="btn-primary w-full text-center"
-              >
-                {checkoutLoading ? 'Sipariş Veriliyor…' : 'Siparişi Onayla'}
-              </button>
+              {onCheckout && (
+                <button
+                  onClick={onCheckout}
+                  disabled={checkoutLoading}
+                  className="btn-primary w-full text-center"
+                >
+                  {checkoutLoading ? 'Sipariş Veriliyor…' : 'Siparişi Onayla'}
+                </button>
+              )}
             </div>
           </div>
         )}

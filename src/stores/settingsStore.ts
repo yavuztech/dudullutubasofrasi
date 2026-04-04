@@ -7,6 +7,8 @@ const DEFAULTS: GelAlSettings = {
   phoneVerification: true,
   whatsappEnabled: false,
   whatsappNumber: '',
+  staffDiscount: false,
+  staffDiscountRate: 20,
 };
 
 interface SettingsState {
