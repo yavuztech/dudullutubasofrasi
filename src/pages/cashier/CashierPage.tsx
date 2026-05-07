@@ -52,6 +52,7 @@ export default function CashierPage() {
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
   const [transferBill, setTransferBill] = useState<Bill | null>(null);
+  const [cancelBillConfirm, setCancelBillConfirm] = useState<Bill | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null); // takeaway fiş
 
@@ -277,6 +278,53 @@ export default function CashierPage() {
       setSelectedBill(null);
     } catch { toast.error('Hesap kapatılamadı.'); }
     finally { setClosingId(null); }
+  };
+
+  const cancelTableBill = async () => {
+    if (!cancelBillConfirm) return;
+    const bill = cancelBillConfirm;
+    setCancelBillConfirm(null);
+    setSelectedBill(null);
+    setClosingId(bill.key);
+    
+    try {
+      // Tüm siparişleri iptal et
+      await Promise.all(bill.orders.map((o) => 
+        updateDoc(doc(db, 'orders', o.id), { 
+          status: 'cancelled', 
+          updatedAt: serverTimestamp() 
+        })
+      ));
+      
+      // Yeni session başlat
+      await newSession(bill.table.id);
+      
+      // Masayı temizlemeye al
+      await updateDoc(doc(db, 'tables', bill.table.id), {
+        status: 'needs_cleaning',
+        mergedTableIds: [],
+        mergedTableNumbers: [],
+        updatedAt: serverTimestamp(),
+      });
+      
+      // Birleşik masaları da sıfırla
+      if (bill.table.mergedTableIds?.length) {
+        await Promise.all(bill.table.mergedTableIds.map((id) =>
+          updateDoc(doc(db, 'tables', id), {
+            status: 'needs_cleaning',
+            mergedIntoId: null,
+            updatedAt: serverTimestamp(),
+          }),
+        ));
+      }
+      
+      const label = tableLabel(bill.table);
+      toast.success(`${label} hesabı iptal edildi.`);
+    } catch { 
+      toast.error('Hesap iptal edilemedi.'); 
+    } finally { 
+      setClosingId(null); 
+    }
   };
 
   const toggleTwDiscount = (id: string) => setTwDiscountOrders((prev) => {
@@ -568,6 +616,13 @@ export default function CashierPage() {
                 <p className="text-xs text-gray-500">{selectedBill.orders.length} sipariş • Hesap detayı</p>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCancelBillConfirm(selectedBill)}
+                  title="Hesabı İptal Et"
+                  className="p-2 rounded-xl hover:bg-red-50 text-red-600"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
                 <button
                   onClick={() => setTransferBill(selectedBill)}
                   title="Aktar / Birleştir"
@@ -901,6 +956,43 @@ export default function CashierPage() {
                   {addLoading ? 'Gönderiliyor…' : 'Mutfağa Gönder'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hesap İptal Onay Modalı */}
+      {cancelBillConfirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setCancelBillConfirm(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900">Hesabı İptal Et</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  <strong>{tableLabel(cancelBillConfirm.table)}</strong> hesabı iptal edilecek.
+                </p>
+                <p className="text-sm text-gray-500 mt-2">
+                  Tüm siparişler iptal edilecek ve masa temizlemeye alınacak. Ödeme alınmayacak. Bu işlem geri alınamaz.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCancelBillConfirm(null)}
+                className="btn-secondary flex-1"
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={cancelTableBill}
+                className="btn-danger flex-1"
+              >
+                İptal Et
+              </button>
             </div>
           </div>
         </div>
