@@ -82,7 +82,7 @@ export default function PackageOrder() {
     return () => unsub?.();
   }, [activeOrder?.id]);
 
-  const availableProducts = products.filter((p) => p.available);
+  const availableProducts = products.filter((p) => p.available && p.department !== 'clothing');
   const grouped = useMemo(() => {
     const map: Record<string, typeof products> = {};
     for (const p of availableProducts) {

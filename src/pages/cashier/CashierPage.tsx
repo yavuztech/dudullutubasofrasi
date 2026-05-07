@@ -12,6 +12,7 @@ import {
   Plus, Minus, Trash2, BadgePercent, ShoppingCart, ArrowLeftRight, Printer,
 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
+import { getTableDisplayName, getMergedTableDisplayName } from '../../utils/tableUtils';
 import toast from 'react-hot-toast';
 import TableTransferModal from '../../components/shared/TableTransferModal';
 import ReceiptModal from '../../components/cashier/ReceiptModal';
@@ -255,8 +256,24 @@ export default function CashierPage() {
     try {
       await Promise.all(selectedBill.orders.map((o) => updateDoc(doc(db, 'orders', o.id), { status: 'paid', updatedAt: serverTimestamp() })));
       await newSession(selectedBill.table.id);
-      await updateDoc(doc(db, 'tables', selectedBill.table.id), { status: 'needs_cleaning', updatedAt: serverTimestamp() });
-      toast.success(`Masa ${selectedBill.table.number} hesabı kapatıldı!`);
+      await updateDoc(doc(db, 'tables', selectedBill.table.id), {
+        status: 'needs_cleaning',
+        mergedTableIds: [],
+        mergedTableNumbers: [],
+        updatedAt: serverTimestamp(),
+      });
+      // Birleşik masaları da temizlemeye al
+      if (selectedBill.table.mergedTableIds?.length) {
+        await Promise.all(selectedBill.table.mergedTableIds.map((id) =>
+          updateDoc(doc(db, 'tables', id), {
+            status: 'needs_cleaning',
+            mergedIntoId: null,
+            updatedAt: serverTimestamp(),
+          }),
+        ));
+      }
+      const label = tableLabel(selectedBill.table);
+      toast.success(`${label} hesabı kapatıldı!`);
       setSelectedBill(null);
     } catch { toast.error('Hesap kapatılamadı.'); }
     finally { setClosingId(null); }
@@ -286,6 +303,18 @@ export default function CashierPage() {
   const discountAmount = applyDiscount && settings.staffDiscount ? Math.round(rawTotal * discountRate / 100) : 0;
   const finalTotal = rawTotal - discountAmount;
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const tableLabel = (table: Table) => {
+    if (table.mergedTableNumbers?.length) {
+      return getMergedTableDisplayName([table.number, ...table.mergedTableNumbers], table.section);
+    }
+    return getTableDisplayName(table);
+  };
+
+  // Section bazlı gruplama
+  const normalBills = bills.filter((b) => !b.table.section || b.table.section === 'normal');
+  const familyBills = bills.filter((b) => b.table.section === 'family');
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="p-4 sm:p-6">
@@ -305,19 +334,55 @@ export default function CashierPage() {
       {tab === 'tables' && (bills.length === 0 ? (
         <div className="text-center py-16 text-gray-400"><LayoutGrid className="w-12 h-12 mx-auto mb-3 opacity-30" /><p className="font-semibold">Aktif hesap yok</p></div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {bills.map((bill) => {
-            const same = bills.filter((b) => b.table.id === bill.table.id);
-            const label = same.length > 1 ? ` #${same.indexOf(bill) + 1}` : '';
-            return (
-              <button key={bill.key} onClick={() => openBill(bill)} className="card flex flex-col gap-2 text-left hover:border-brand-300 hover:shadow-md transition-all active:scale-[0.98]">
-                <div className="flex items-center justify-between"><span className="font-bold text-gray-900 text-base">Masa {bill.table.number}{label}</span><Banknote className="w-4 h-4 text-green-600" /></div>
-                <p className="text-xs text-gray-400">{bill.orders.length} sipariş</p>
-                <p className="font-bold text-brand-600">{formatCurrency(bill.total)}</p>
-                <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full self-start">Hesap açık</span>
-              </button>
-            );
-          })}
+        <div className="flex flex-col gap-6">
+          {/* Normal Masalar */}
+          {normalBills.length > 0 && (
+            <div>
+              <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                🍽️ MASALAR ({normalBills.length})
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {normalBills.map((bill) => {
+                  const same = bills.filter((b) => b.table.id === bill.table.id);
+                  const sessionSuffix = same.length > 1 ? ` #${same.indexOf(bill) + 1}` : '';
+                  return (
+                    <button key={bill.key} onClick={() => openBill(bill)} className="card flex flex-col gap-2 text-left hover:border-brand-300 hover:shadow-md transition-all active:scale-[0.98]">
+                      <div className="flex items-center justify-between"><span className="font-bold text-gray-900 text-base">{tableLabel(bill.table)}{sessionSuffix}</span><Banknote className="w-4 h-4 text-green-600" /></div>
+                      <p className="text-xs text-gray-400">{bill.orders.length} sipariş</p>
+                      <p className="font-bold text-brand-600">{formatCurrency(bill.total)}</p>
+                      <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full self-start">Hesap açık</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          
+          {/* Aile Bölümü */}
+          {familyBills.length > 0 && (
+            <div>
+              <h3 className="text-sm font-bold text-blue-600 uppercase tracking-wider mb-3 flex items-center gap-2">
+                👨‍👩‍👧‍👦 AİLE BÖLÜMÜ ({familyBills.length})
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {familyBills.map((bill) => {
+                  const same = bills.filter((b) => b.table.id === bill.table.id);
+                  const sessionSuffix = same.length > 1 ? ` #${same.indexOf(bill) + 1}` : '';
+                  return (
+                    <button key={bill.key} onClick={() => openBill(bill)} className="card flex flex-col gap-2 text-left hover:border-blue-300 hover:shadow-md transition-all active:scale-[0.98] border-blue-100">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-gray-900 text-base">{tableLabel(bill.table)}{sessionSuffix}</span>
+                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">⚡</span>
+                      </div>
+                      <p className="text-xs text-gray-400">{bill.orders.length} sipariş</p>
+                      <p className="font-bold text-brand-600">{formatCurrency(bill.total)}</p>
+                      <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full self-start">Hesap açık</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       ))}
 
@@ -425,37 +490,44 @@ export default function CashierPage() {
 
                   {/* Ürün ekleme paneli */}
                   {editShowAdd ? (
-                    <div className="border border-gray-200 rounded-xl p-3 flex flex-col gap-2 bg-gray-50">
-                      <div className="flex items-center justify-between">
+                    <div className="border border-gray-200 rounded-xl bg-gray-50 flex flex-col">
+                      {/* Header */}
+                      <div className="flex items-center justify-between p-3 border-b border-gray-200 flex-shrink-0">
                         <p className="text-xs font-bold text-gray-600">Ürün Ekle</p>
                         <button onClick={() => setEditShowAdd(false)} className="p-0.5 rounded hover:bg-gray-200"><X className="w-3.5 h-3.5 text-gray-500" /></button>
                       </div>
-                      <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+                      
+                      {/* Kategori seçimi */}
+                      <div className="flex gap-1.5 overflow-x-auto no-scrollbar px-3 pt-2 pb-2 flex-shrink-0">
                         {categories.map((cat) => (
                           <button key={cat.id} onClick={() => setActiveCategory(cat.id)} className={`flex-shrink-0 px-2.5 py-0.5 rounded-full text-xs font-semibold transition-colors ${activeCategory === cat.id ? 'bg-brand-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>
                             {cat.name}
                           </button>
                         ))}
                       </div>
-                      <div className="flex flex-col gap-1 max-h-44 overflow-y-auto">
-                        {(grouped[activeCategory] ?? []).map((p) => {
-                          const qty = editItems.find((i) => i.productId === p.id)?.quantity ?? 0;
-                          return (
-                            <div key={p.id} className="flex items-center gap-2 bg-white rounded-lg p-2">
-                              <p className="flex-1 text-xs font-medium text-gray-900 truncate">{p.name}</p>
-                              <p className="text-xs text-brand-600 font-semibold flex-shrink-0">{formatCurrency(p.price)}</p>
-                              <div className="flex items-center gap-1 flex-shrink-0">
-                                {qty > 0 ? (
-                                  <>
-                                    <button onClick={() => removeFromEdit(p.id)} className="w-6 h-6 rounded border border-gray-200 flex items-center justify-center hover:bg-red-50"><Minus className="w-3 h-3" /></button>
-                                    <span className="w-4 text-center text-xs font-bold">{qty}</span>
-                                  </>
-                                ) : <span className="w-10" />}
-                                <button onClick={() => addToEdit(p)} className="w-6 h-6 bg-brand-600 text-white rounded flex items-center justify-center hover:bg-brand-700"><Plus className="w-3 h-3" /></button>
+                      
+                      {/* Ürün listesi (scrollable, sabit max-height) */}
+                      <div className="overflow-y-auto px-3 pb-3 max-h-40">
+                        <div className="flex flex-col gap-1">
+                          {(grouped[activeCategory] ?? []).map((p) => {
+                            const qty = editItems.find((i) => i.productId === p.id)?.quantity ?? 0;
+                            return (
+                              <div key={p.id} className="flex items-center gap-2 bg-white rounded-lg p-2">
+                                <p className="flex-1 text-xs font-medium text-gray-900 truncate">{p.name}</p>
+                                <p className="text-xs text-brand-600 font-semibold flex-shrink-0">{formatCurrency(p.price)}</p>
+                                <div className="flex items-center gap-1 flex-shrink-0">
+                                  {qty > 0 ? (
+                                    <>
+                                      <button onClick={() => removeFromEdit(p.id)} className="w-6 h-6 rounded border border-gray-200 flex items-center justify-center hover:bg-red-50"><Minus className="w-3 h-3" /></button>
+                                      <span className="w-4 text-center text-xs font-bold">{qty}</span>
+                                    </>
+                                  ) : <span className="w-10" />}
+                                  <button onClick={() => addToEdit(p)} className="w-6 h-6 bg-brand-600 text-white rounded flex items-center justify-center hover:bg-brand-700"><Plus className="w-3 h-3" /></button>
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
                   ) : (
@@ -535,7 +607,7 @@ export default function CashierPage() {
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-gray-100 flex-shrink-0">
               <div>
-                <h3 className="font-bold text-gray-900 text-lg">Masa {selectedBill.table.number}</h3>
+                <h3 className="font-bold text-gray-900 text-lg">{tableLabel(selectedBill.table)}</h3>
                 <p className="text-xs text-gray-500">{selectedBill.orders.length} sipariş • Hesap detayı</p>
               </div>
               <div className="flex items-center gap-2">
@@ -616,49 +688,60 @@ export default function CashierPage() {
 
               {/* Ürün ekleme paneli */}
               {addMode && (
-                <div className="border-2 border-brand-200 rounded-xl p-3 flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
+                <div className="border-2 border-brand-200 rounded-xl flex flex-col bg-white">
+                  {/* Header */}
+                  <div className="flex items-center justify-between p-3 border-b border-gray-100 flex-shrink-0">
                     <p className="text-sm font-bold text-brand-700">Ürün Ekle</p>
                     <button onClick={() => { setAddMode(false); setAddCart([]); }} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-500" /></button>
                   </div>
+                  
                   {/* Kategori seçimi */}
-                  <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                  <div className="flex gap-1.5 overflow-x-auto no-scrollbar px-3 pt-3 pb-2 flex-shrink-0">
                     {categories.map((cat) => (
                       <button key={cat.id} onClick={() => setActiveCategory(cat.id)} className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${activeCategory === cat.id ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
                         {cat.name}
                       </button>
                     ))}
                   </div>
-                  {/* Ürün listesi */}
-                  <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
-                    {(grouped[activeCategory] ?? []).map((p) => {
-                      const qty = cartQty(p.id);
-                      return (
-                        <div key={p.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                          <p className="flex-1 text-sm font-medium text-gray-900 truncate">{p.name}</p>
-                          <p className="text-xs text-brand-600 font-semibold flex-shrink-0">{formatCurrency(p.price)}</p>
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            {qty > 0 ? (
-                              <>
-                                <button onClick={() => removeFromCart(p.id)} className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-100"><Minus className="w-3 h-3" /></button>
-                                <span className="w-4 text-center text-sm font-bold">{qty}</span>
-                              </>
-                            ) : <span className="w-10" />}
-                            <button onClick={() => addToCart(p)} className="w-6 h-6 bg-brand-600 text-white rounded-lg flex items-center justify-center hover:bg-brand-700"><Plus className="w-3 h-3" /></button>
+                  
+                  {/* Ürün listesi (scrollable, sabit max-height) */}
+                  <div className="overflow-y-auto px-3 py-2 max-h-40">
+                    <div className="flex flex-col gap-2">
+                      {(grouped[activeCategory] ?? []).map((p) => {
+                        const qty = cartQty(p.id);
+                        return (
+                          <div key={p.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                            <p className="flex-1 text-sm font-medium text-gray-900 truncate">{p.name}</p>
+                            <p className="text-xs text-brand-600 font-semibold flex-shrink-0">{formatCurrency(p.price)}</p>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              {qty > 0 ? (
+                                <>
+                                  <button onClick={() => removeFromCart(p.id)} className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-100"><Minus className="w-3 h-3" /></button>
+                                  <span className="w-4 text-center text-sm font-bold">{qty}</span>
+                                </>
+                              ) : <span className="w-10" />}
+                              <button onClick={() => addToCart(p)} className="w-6 h-6 bg-brand-600 text-white rounded-lg flex items-center justify-center hover:bg-brand-700"><Plus className="w-3 h-3" /></button>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {cartCount > 0 && (
-                    <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
-                      <ShoppingCart className="w-4 h-4 text-brand-600 flex-shrink-0" />
-                      <span className="text-sm text-gray-600 flex-1">{cartCount} ürün • {formatCurrency(cartTotal)}</span>
-                      <button onClick={sendAddCart} disabled={addLoading} className="btn-primary px-4 py-2 text-xs flex items-center gap-1.5 disabled:opacity-60">
-                        {addLoading ? 'Gönderiliyor…' : 'Mutfağa Gönder'}
-                      </button>
+                        );
+                      })}
                     </div>
-                  )}
+                  </div>
+                  
+                  {/* Footer (sticky bottom) */}
+                  <div className="flex items-center gap-2 p-3 border-t border-gray-100 bg-white flex-shrink-0">
+                    <ShoppingCart className="w-4 h-4 text-brand-600 flex-shrink-0" />
+                    <span className="text-sm text-gray-600 flex-1">
+                      {cartCount > 0 ? `${cartCount} ürün • ${formatCurrency(cartTotal)}` : 'Ürün seçin'}
+                    </span>
+                    <button 
+                      onClick={sendAddCart} 
+                      disabled={addLoading || cartCount === 0} 
+                      className="btn-primary px-4 py-2 text-xs flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {addLoading ? 'Gönderiliyor…' : 'Mutfağa Gönder'}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -727,6 +810,7 @@ export default function CashierPage() {
       {showReceipt && selectedBill && (
         <ReceiptModal
           tableNumber={selectedBill.table.number}
+          tableLabel={tableLabel(selectedBill.table)}
           orders={selectedBill.orders}
           discountRate={discountRate}
           discountApplied={applyDiscount && !!settings.staffDiscount}

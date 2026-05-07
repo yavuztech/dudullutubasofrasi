@@ -7,6 +7,7 @@ interface Props {
   onMarkReady: (order: Order) => void;
   onMarkPreparing: (order: Order) => void;
   loading?: boolean;
+  tableDisplayName?: string; // Masa adı (section bilgisi içerebilir)
 }
 
 const statusColors: Record<string, string> = {
@@ -15,7 +16,7 @@ const statusColors: Record<string, string> = {
   ready:     'border-l-green-400 bg-green-50',
 };
 
-export default function KitchenOrderCard({ order, onMarkReady, onMarkPreparing, loading }: Props) {
+export default function KitchenOrderCard({ order, onMarkReady, onMarkPreparing, loading, tableDisplayName }: Props) {
   const age = minutesAgo(order.createdAt);
 
   return (
@@ -30,7 +31,7 @@ export default function KitchenOrderCard({ order, onMarkReady, onMarkPreparing, 
               <Package className="w-4 h-4 text-brand-600" />
             )}
             <span className="font-bold text-gray-900">
-              {order.type === 'table' ? `Masa ${order.tableNumber}` : 'Gel Al'}
+              {order.type === 'table' ? (tableDisplayName || `Masa ${order.tableNumber}`) : 'Gel Al'}
             </span>
             {order.type === 'takeaway' && order.customerPhone && (
               <span className="text-xs text-gray-500 flex items-center gap-1">

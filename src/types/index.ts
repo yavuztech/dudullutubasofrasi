@@ -2,7 +2,7 @@
 //  Domain types for Dudullu Tuba Sofrası
 // ─────────────────────────────────────────────
 
-export type UserRole = 'admin' | 'kitchen' | 'waiter' | 'cashier';
+export type UserRole = 'admin' | 'kitchen' | 'waiter' | 'cashier' | 'clothing';
 
 export interface StaffUser {
   uid: string;
@@ -20,6 +20,8 @@ export type TableStatus =
   | 'needs_cleaning'   // masa kapandı, temizlenmeli
   | 'being_cleaned';   // garson temizliyor
 
+export type TableSection = 'normal' | 'family';
+
 export interface Table {
   id: string;
   number: number;
@@ -29,9 +31,16 @@ export interface Table {
   qrToken: string; // random token embedded in QR URL
   sessionId: string; // changes on every new customer visit (payment collected)
   updatedAt: Date;
+  section?: TableSection; // undefined = 'normal' (geriye dönük uyumlu)
+  // Fiziksel masa birleştirme
+  mergedTableIds?: string[];     // Bu masaya eklenen masaların ID'leri (primary masada)
+  mergedTableNumbers?: number[]; // Görüntülemek için numara listesi (primary masada)
+  mergedIntoId?: string;         // Bu masa başka bir masaya eklendiyse o masanın ID'si
 }
 
 // ─── Product ────────────────────────────────
+export type ProductDepartment = 'food' | 'clothing';
+
 export interface Product {
   id: string;
   name: string;
@@ -41,6 +50,8 @@ export interface Product {
   category: string;
   available: boolean;
   sortOrder: number;
+  department?: ProductDepartment; // undefined = 'food' (geriye dönük uyumlu)
+  stock?: number;                 // undefined = sınırsız (gıda), number = stok takipli (giyim)
   createdAt: Date;
   updatedAt: Date;
 }
@@ -49,6 +60,26 @@ export interface Category {
   id: string;
   name: string;
   sortOrder: number;
+  department?: ProductDepartment; // undefined = 'food'
+  kitchenStation?: string;        // 'station1' | 'station2' | 'station3' | undefined
+}
+
+// ─── Clothing Sale ──────────────────────────
+export interface ClothingSaleItem {
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface ClothingSale {
+  id: string;
+  items: ClothingSaleItem[];
+  customerName?: string;
+  totalAmount: number;
+  discountApplied: boolean;
+  discountRate: number;
+  createdAt: Date;
 }
 
 // ─── Order ──────────────────────────────────
@@ -115,6 +146,13 @@ export interface GelAlSettings {
   whatsappNumber: string;
   staffDiscount: boolean;       // Personel indirimi aktif mi
   staffDiscountRate: number;    // 0-100 arası yüzde
+}
+
+// ─── Printer Settings (Firestore: settings/printer-config) ───
+export interface PrinterSettings {
+  enabled: boolean;                         // Otomatik yazdırma aktif mi
+  stationMapping: Record<string, string>;   // { station1: "EPSON TM-T88V", station2: "Star TSP100" }
+  bridgeUrl?: string;                       // Bridge service URL (varsayılan: http://localhost:3001)
 }
 
 // ─── Cart (client-side only) ─────────────────

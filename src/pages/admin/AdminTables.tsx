@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Plus, QrCode, Download, Package } from 'lucide-react';
+import { Plus, QrCode, Download, Package, X, Trash2, AlertTriangle } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import toast from 'react-hot-toast';
 import { useTableStore } from '../../stores/tableStore';
+import type { TableSection } from '../../types';
 
 export default function AdminTables() {
-  const { tables, subscribe, addTable } = useTableStore();
+  const { tables, subscribe, addTable, deleteTable } = useTableStore();
   const [qrTable, setQrTable] = useState<typeof tables[0] | null>(null);
   const [showTakeawayQR, setShowTakeawayQR] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<typeof tables[0] | null>(null);
+  const [form, setForm] = useState({ section: 'normal' as TableSection, capacity: 4 });
 
   useEffect(() => {
     const unsub = subscribe();
@@ -17,9 +21,29 @@ export default function AdminTables() {
   const baseUrl = window.location.origin;
 
   const handleAddTable = async () => {
-    const max = tables.length ? Math.max(...tables.map((t) => t.number)) : 0;
-    await addTable(max + 1, 4);
-    toast.success(`Masa ${max + 1} eklendi.`);
+    const normalTables = tables.filter((t) => (!t.section || t.section === 'normal'));
+    const familyTables = tables.filter((t) => t.section === 'family');
+    
+    const maxNormal = normalTables.length ? Math.max(...normalTables.map((t) => t.number)) : 0;
+    const maxFamily = familyTables.length ? Math.max(...familyTables.map((t) => t.number)) : 0;
+    
+    const nextNumber = form.section === 'family' ? maxFamily + 1 : maxNormal + 1;
+    
+    await addTable(nextNumber, form.capacity, form.section);
+    const displayName = form.section === 'family' ? `Aile - ${nextNumber}` : `Masa ${nextNumber}`;
+    toast.success(`${displayName} eklendi.`);
+    setShowAddForm(false);
+    setForm({ section: 'normal', capacity: 4 });
+  };
+
+  const handleDeleteTable = async () => {
+    if (!deleteConfirm) return;
+    const displayName = deleteConfirm.section === 'family' 
+      ? `Aile - ${deleteConfirm.number}` 
+      : `Masa ${deleteConfirm.number}`;
+    await deleteTable(deleteConfirm.id);
+    toast.success(`${displayName} silindi.`);
+    setDeleteConfirm(null);
   };
 
   const handleDownloadQR = (tableNumber: number) => {
@@ -77,16 +101,23 @@ export default function AdminTables() {
 
       <div className="flex items-center justify-between mb-4">
         <h2 className="font-bold text-gray-800">Masa & QR Yönetimi</h2>
-        <button onClick={handleAddTable} className="btn-primary flex items-center gap-2 text-sm py-2">
+        <button onClick={() => setShowAddForm(true)} className="btn-primary flex items-center gap-2 text-sm py-2">
           <Plus className="w-4 h-4" />
           Masa Ekle
         </button>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        {tables.map((table) => (
+        {tables.map((table) => {
+          const displayName = table.section === 'family' ? `Aile - ${table.number}` : `Masa ${table.number}`;
+          return (
           <div key={table.id} className="card flex flex-col gap-3 items-center text-center">
-            <p className="font-bold text-gray-900">Masa {table.number}</p>
+            <div className="flex items-center gap-2">
+              <p className="font-bold text-gray-900">{displayName}</p>
+              {table.section === 'family' && (
+                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">Aile</span>
+              )}
+            </div>
 
             {/* Hidden canvas used for QR download */}
             <div className="hidden">
@@ -113,14 +144,84 @@ export default function AdminTables() {
               <Download className="w-3 h-3" />
               İndir
             </button>
+            
+            <button
+              onClick={() => setDeleteConfirm(table)}
+              className="btn-secondary text-xs py-1.5 flex items-center gap-1.5 w-full justify-center text-red-600 hover:bg-red-50 hover:border-red-200"
+            >
+              <Trash2 className="w-3 h-3" />
+              Sil
+            </button>
           </div>
-        ))}
+        );
+        })}
       </div>
 
       {tables.length === 0 && (
         <div className="text-center py-16 text-gray-400">
           <p className="text-lg font-semibold">Henüz masa yok</p>
-          <button onClick={handleAddTable} className="btn-primary mt-4">İlk Masayı Ekle</button>
+          <p className="text-sm mt-1">Yukarıdaki "Masa Ekle" butonunu kullanarak ekleyebilirsiniz.</p>
+        </div>
+      )}
+
+      {/* Add Table Form Modal */}
+      {showAddForm && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowAddForm(false)} />
+          <div className="relative bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+              <h2 className="font-bold text-gray-900">Yeni Masa Ekle</h2>
+              <button onClick={() => setShowAddForm(false)} className="p-1 rounded-lg hover:bg-gray-100">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-4 flex flex-col gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Bölüm</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, section: 'normal' }))}
+                    className={`px-4 py-3 rounded-xl font-medium transition-all ${
+                      form.section === 'normal'
+                        ? 'bg-brand-600 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    🍽️ Masalar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, section: 'family' }))}
+                    className={`px-4 py-3 rounded-xl font-medium transition-all ${
+                      form.section === 'family'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    👨‍👩‍👧‍👦 Aile Bölümü
+                  </button>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Kapasite</label>
+                <select
+                  value={form.capacity}
+                  onChange={(e) => setForm((f) => ({ ...f, capacity: Number(e.target.value) }))}
+                  className="input"
+                >
+                  {[2, 4, 6, 8, 10, 12].map((n) => (
+                    <option key={n} value={n}>{n} Kişi</option>
+                  ))}
+                </select>
+              </div>
+              
+              <button onClick={handleAddTable} className="btn-primary mt-2">
+                Masa Ekle
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -185,6 +286,43 @@ export default function AdminTables() {
                 İndir
               </button>
               <button onClick={() => setQrTable(null)} className="btn-secondary">Kapat</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setDeleteConfirm(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-fade-in">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900">Masayı Sil</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  <strong>{deleteConfirm.section === 'family' ? `Aile - ${deleteConfirm.number}` : `Masa ${deleteConfirm.number}`}</strong> silinecek.
+                </p>
+                <p className="text-sm text-gray-500 mt-2">
+                  Bu işlem geri alınamaz. Masayla ilişkili QR kod da silinecektir.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="btn-secondary flex-1"
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={handleDeleteTable}
+                className="btn-danger flex-1"
+              >
+                Sil
+              </button>
             </div>
           </div>
         </div>

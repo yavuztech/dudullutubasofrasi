@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LogOut, ChefHat, UtensilsCrossed, LayoutDashboard, ClipboardList, Users, Bell, Package, Banknote } from 'lucide-react';
+import { LogOut, ChefHat, UtensilsCrossed, LayoutDashboard, ClipboardList, Users, Bell, Package, Banknote, ShoppingBag, Settings } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 
@@ -21,12 +21,17 @@ const navItems = {
   cashier: [
     { path: '/cashier', label: 'Kasa', icon: Banknote },
   ],
+  clothing: [
+    { path: '/clothing', label: 'Giyim Kasası', icon: ShoppingBag },
+  ],
   admin: [
     { path: '/admin/orders',   label: 'Siparişler',  icon: ClipboardList },
     { path: '/admin/takeaway', label: 'Gel Al',       icon: Package },
     { path: '/admin/products', label: 'Ürünler',     icon: UtensilsCrossed },
     { path: '/admin/tables',   label: 'Masalar',     icon: LayoutDashboard },
+    { path: '/admin/clothing', label: 'Giyim',       icon: ShoppingBag },
     { path: '/admin/staff',    label: 'Personel',    icon: Users },
+    { path: '/admin/settings', label: 'Ayarlar',     icon: Settings },
   ],
 };
 

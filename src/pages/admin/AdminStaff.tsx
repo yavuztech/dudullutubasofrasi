@@ -14,10 +14,11 @@ import { useEffect } from 'react';
 import type { StaffUser } from '../../types';
 
 const ROLE_LABELS: Record<string, string> = {
-  admin:   'Yönetici',
-  kitchen: 'Mutfak',
-  waiter:  'Garson',
-  cashier: 'Kasa',
+  admin:    'Yönetici',
+  kitchen:  'Mutfak',
+  waiter:   'Garson',
+  cashier:  'Kasa',
+  clothing: 'Giyim Kasiyeri',
 };
 
 export default function AdminStaff() {
@@ -173,7 +174,7 @@ export default function AdminStaff() {
             <h3 className="font-bold text-gray-900 mb-1">Rol Düzenle</h3>
             <p className="text-sm text-gray-500 mb-4">{editingStaff.displayName}</p>
             <div className="flex flex-col gap-3 mb-5">
-              {(['waiter', 'kitchen', 'cashier', 'admin'] as const).map((r) => (
+              {(['waiter', 'kitchen', 'cashier', 'clothing', 'admin'] as const).map((r) => (
                 <label key={r} className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
@@ -231,7 +232,7 @@ export default function AdminStaff() {
               <div>
                 <p className="text-sm font-medium text-gray-700 mb-2">Rol(ler) *</p>
                 <div className="flex flex-col gap-2">
-                  {(['waiter', 'kitchen', 'cashier', 'admin'] as const).map((r) => (
+                  {(['waiter', 'kitchen', 'cashier', 'clothing', 'admin'] as const).map((r) => (
                     <label key={r} className="flex items-center gap-3 cursor-pointer">
                       <input
                         type="checkbox"

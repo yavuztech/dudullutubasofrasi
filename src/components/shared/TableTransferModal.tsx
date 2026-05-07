@@ -1,14 +1,15 @@
 /**
  * Masa Birleştirme / Aktarım Modal
  *
- * Mod "transfer": Kaynak masanın tüm aktif siparişleri hedef masaya taşınır.
- * Mod "merge":    Kaynak masanın tüm aktif siparişleri hedef masanın oturumuna eklenir.
- * Her iki modda da kaynak masa needs_cleaning olur, hedef masa occupied olur.
+ * Mod "transfer":  Kaynak masanın tüm aktif siparişleri hedef BOŞMASAYA taşınır.
+ * Mod "join":      Boş bir masa fiziksel olarak kaynağa eklenir → "Masa 1 - 2" görünümü.
+ *                  Siparişler taşınmaz; sadece UI'da birleşik gösterilir.
+ * Mod "merge":     Kaynak masanın siparişleri dolu hedef masanın hesabına eklenir.
  */
 import { useState } from 'react';
-import { ArrowRight, GitMerge, X } from 'lucide-react';
+import { ArrowRight, Link2, GitMerge, X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp, arrayUnion } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useTableStore } from '../../stores/tableStore';
 import type { Table } from '../../types';
@@ -18,26 +19,36 @@ interface Props {
   onClose: () => void;
 }
 
-type Mode = 'transfer' | 'merge';
+type Mode = 'transfer' | 'join' | 'merge';
 
 export default function TableTransferModal({ sourceTable, onClose }: Props) {
-  const { tables, updateTableStatus } = useTableStore();
-  const [mode, setMode] = useState<Mode>('transfer');
+  const { tables } = useTableStore();
+  const [mode, setMode] = useState<Mode>('join');
   const [targetId, setTargetId] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Transfer → boş masalar (available + needs_cleaning)
-  // Merge → dolu masalar (occupied + needs_cleaning)
+  const statusLabel = (t: Table) => {
+    if (t.status === 'occupied') {
+      const nums = [t.number, ...(t.mergedTableNumbers ?? [])];
+      return `Dolu — Masa ${nums.join(' - ')}`;
+    }
+    if (t.status === 'needs_cleaning') return 'Temizlik Bekleniyor';
+    return 'Boş';
+  };
+
   const candidates = tables.filter((t) => {
     if (t.id === sourceTable.id) return false;
+    if (t.mergedIntoId) return false; // zaten başka masaya eklenmiş
     if (mode === 'transfer') return t.status === 'available' || t.status === 'needs_cleaning';
+    if (mode === 'join')     return t.status === 'available' || t.status === 'needs_cleaning';
+    // merge → dolu masalar
     return t.status === 'occupied' || t.status === 'needs_cleaning';
   });
 
-  const statusLabel = (s: string) => {
-    if (s === 'occupied') return 'Dolu';
-    if (s === 'needs_cleaning') return 'Temizlik Bekleniyor';
-    return 'Boş';
+  const descriptions: Record<Mode, string> = {
+    transfer: `Masa ${sourceTable.number}'deki siparişler seçilen boş masaya taşınır. Kaynak masa temizlemeye alınır.`,
+    join:     `Seçilen boş masa fiziksel olarak Masa ${sourceTable.number}'e eklenir. Kasa ekranında "Masa ${sourceTable.number} - X" şeklinde görünür. Siparişler aynı hesapta toplanır.`,
+    merge:    `Masa ${sourceTable.number}'deki siparişler seçilen dolu masanın hesabına eklenir. Kaynak masa temizlemeye alınır.`,
   };
 
   const handleSubmit = async () => {
@@ -47,7 +58,26 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
 
     setLoading(true);
     try {
-      // Kaynak masanın aktif siparişlerini al
+      if (mode === 'join') {
+        // Fiziksel birleştirme: hedef boş masayı kaynağa ekle
+        // Hedef masayı occupied + mergedIntoId işaretle
+        await updateDoc(doc(db, 'tables', target.id), {
+          status: 'occupied',
+          mergedIntoId: sourceTable.id,
+          updatedAt: serverTimestamp(),
+        });
+        // Kaynak masaya hedef masayı ekle
+        await updateDoc(doc(db, 'tables', sourceTable.id), {
+          mergedTableIds: arrayUnion(target.id),
+          mergedTableNumbers: arrayUnion(target.number),
+          updatedAt: serverTimestamp(),
+        });
+        toast.success(`Masa ${target.number}, Masa ${sourceTable.number}'e eklendi.`);
+        onClose();
+        return;
+      }
+
+      // Transfer ve Merge: siparişleri taşı
       const snap = await getDocs(query(
         collection(db, 'orders'),
         where('tableId', '==', sourceTable.id),
@@ -59,10 +89,7 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
         return;
       }
 
-      // Merge'de hedef masanın mevcut sessionId'si, Transfer'da hedef masanın sessionId (yoksa yenisi)
       const targetSessionId = target.sessionId ?? null;
-
-      // Tüm siparişleri hedef masaya taşı
       await Promise.all(snap.docs.map((d) =>
         updateDoc(doc(db, 'orders', d.id), {
           tableId: target.id,
@@ -72,17 +99,31 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
         }),
       ));
 
-      // Kaynak masayı needs_cleaning yap (her iki modda)
-      await updateTableStatus(sourceTable.id, 'needs_cleaning');
+      // Kaynak masayı temizlemeye al, merge alanlarını sıfırla
+      await updateDoc(doc(db, 'tables', sourceTable.id), {
+        status: 'needs_cleaning',
+        mergedTableIds: [],
+        mergedTableNumbers: [],
+        updatedAt: serverTimestamp(),
+      });
+      // Kaynak masaya bağlı diğer masaları da sıfırla
+      if (sourceTable.mergedTableIds?.length) {
+        await Promise.all(sourceTable.mergedTableIds.map((id) =>
+          updateDoc(doc(db, 'tables', id), {
+            status: 'needs_cleaning',
+            mergedIntoId: null,
+            updatedAt: serverTimestamp(),
+          }),
+        ));
+      }
 
-      // Hedef masayı occupied yap
       await updateDoc(doc(db, 'tables', target.id), {
         status: 'occupied',
         updatedAt: serverTimestamp(),
       });
 
-      const actionLabel = mode === 'transfer' ? 'aktarıldı' : 'birleştirildi';
-      toast.success(`Masa ${sourceTable.number} → Masa ${target.number} ${actionLabel}.`);
+      const label = mode === 'transfer' ? 'aktarıldı' : 'birleştirildi';
+      toast.success(`Masa ${sourceTable.number} → Masa ${target.number} ${label}.`);
       onClose();
     } catch {
       toast.error('İşlem başarısız. Tekrar deneyin.');
@@ -90,6 +131,11 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
       setLoading(false);
     }
   };
+
+  const btnClass = (m: Mode) =>
+    `flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border-2 transition-colors ${
+      mode === m ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-gray-200 text-gray-500'
+    }`;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center">
@@ -103,38 +149,29 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
         </div>
 
         {/* Mod seçimi */}
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={() => { setMode('transfer'); setTargetId(''); }}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-semibold border-2 transition-colors ${
-              mode === 'transfer' ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-gray-200 text-gray-500'
-            }`}
-          >
-            <ArrowRight className="w-4 h-4" /> Aktarım
+        <div className="flex gap-1.5 mb-3">
+          <button onClick={() => { setMode('transfer'); setTargetId(''); }} className={btnClass('transfer')}>
+            <ArrowRight className="w-3.5 h-3.5" /> Aktarım
           </button>
-          <button
-            onClick={() => { setMode('merge'); setTargetId(''); }}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-semibold border-2 transition-colors ${
-              mode === 'merge' ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-gray-200 text-gray-500'
-            }`}
-          >
-            <GitMerge className="w-4 h-4" /> Birleştir
+          <button onClick={() => { setMode('join'); setTargetId(''); }} className={btnClass('join')}>
+            <Link2 className="w-3.5 h-3.5" /> Masa Ekle
+          </button>
+          <button onClick={() => { setMode('merge'); setTargetId(''); }} className={btnClass('merge')}>
+            <GitMerge className="w-3.5 h-3.5" /> Hesap Birleştir
           </button>
         </div>
 
-        <p className="text-xs text-gray-500 mb-4">
-          {mode === 'transfer'
-            ? `Masa ${sourceTable.number}'deki siparişler boş bir masaya taşınır. Kaynak masa temizlemeye alınır.`
-            : `Masa ${sourceTable.number}'deki siparişler dolu bir masanın hesabına eklenir. Kaynak masa temizlemeye alınır.`}
+        <p className="text-xs text-gray-500 bg-gray-50 rounded-xl px-3 py-2 mb-4 leading-relaxed">
+          {descriptions[mode]}
         </p>
 
         {/* Hedef masa */}
         <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-          Hedef Masa
+          {mode === 'join' ? 'Eklenecek Boş Masa' : 'Hedef Masa'}
         </label>
         {candidates.length === 0 ? (
-          <p className="text-sm text-red-500">
-            {mode === 'transfer' ? 'Uygun boş masa yok.' : 'Uygun dolu masa yok.'}
+          <p className="text-sm text-red-500 mb-4">
+            {mode === 'merge' ? 'Uygun dolu masa yok.' : 'Uygun boş masa yok.'}
           </p>
         ) : (
           <select
@@ -145,7 +182,7 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
             <option value="">Masa seçin…</option>
             {candidates.map((t) => (
               <option key={t.id} value={t.id}>
-                Masa {t.number} — {statusLabel(t.status)}
+                Masa {t.number} — {statusLabel(t)}
               </option>
             ))}
           </select>
@@ -156,7 +193,7 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
           disabled={loading || !targetId || candidates.length === 0}
           className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50"
         >
-          {loading ? 'İşleniyor…' : mode === 'transfer' ? 'Aktarımı Onayla' : 'Birleştirmeyi Onayla'}
+          {loading ? 'İşleniyor…' : mode === 'transfer' ? 'Aktarımı Onayla' : mode === 'join' ? 'Masayı Ekle' : 'Hesapları Birleştir'}
         </button>
       </div>
     </div>

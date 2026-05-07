@@ -41,16 +41,16 @@ service cloud.firestore {
     // ── Ürünler ───────────────────────────────────────────────────────────
     match /products/{productId} {
       allow read:   if true;   // Genel menü
-      allow create: if hasAnyRole(['kitchen', 'admin']);
-      allow update: if hasAnyRole(['kitchen', 'admin']);
+      allow create: if hasAnyRole(['kitchen', 'clothing', 'admin']);
+      allow update: if hasAnyRole(['kitchen', 'clothing', 'admin']);
       allow delete: if isAdmin();
     }
 
-    // ── Kategoriler ───────────────────────────────────────────────────────
+    // ── Kategoriler ───────────────────────────────
     match /categories/{catId} {
       allow read:   if true;
-      allow create: if hasAnyRole(['kitchen', 'admin']);
-      allow update: if hasAnyRole(['kitchen', 'admin']);
+      allow create: if hasAnyRole(['kitchen', 'clothing', 'admin']);
+      allow update: if hasAnyRole(['kitchen', 'clothing', 'admin']);
       allow delete: if isAdmin();
     }
 
@@ -89,7 +89,7 @@ service cloud.firestore {
     // ── Sipariş Kanalı Ayarları ───────────────────────────────────────────
     match /settings/{settingId} {
       allow read:  if true;        // müşteri sayfası ayarları okuyabilir
-      allow write: if isAdmin();   // sadece admin değiştirebilir
+      allow write: if isAdmin();   // sadece admin değiştirebilir (gel-al, printer-config vb.)
     }
 
     // ── Personel ──────────────────────────────────────────────────────────
@@ -104,6 +104,12 @@ service cloud.firestore {
                      request.resource.data.diff(resource.data).affectedKeys()
                        .hasOnly(['fcmToken', 'updatedAt']));
     }
-  }
+    // ── Giyim Satışları ────────────────────────────
+    match /clothingSales/{saleId} {
+      allow read:   if hasAnyRole(['clothing', 'admin']);
+      allow create: if hasAnyRole(['clothing', 'admin']);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }  }
 }
 

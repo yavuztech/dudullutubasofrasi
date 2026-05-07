@@ -2,18 +2,25 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { ChefHat, Package } from 'lucide-react';
 import { useOrderStore } from '../../stores/orderStore';
+import { useTableStore } from '../../stores/tableStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import KitchenOrderCard from '../../components/kitchen/KitchenOrderCard';
+import { getTableDisplayName } from '../../utils/tableUtils';
 import type { Order } from '../../types';
 
 export default function KitchenOrders() {
   const { orders, subscribe, updateOrderStatus } = useOrderStore();
+  const { tables, subscribe: subscribeTables } = useTableStore();
   const { createNotification } = useNotificationStore();
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = subscribe(['pending', 'preparing', 'ready']);
-    return unsub;
+    const unsubTables = subscribeTables();
+    return () => {
+      unsub();
+      unsubTables();
+    };
   }, []);
 
   // ── Active orders handlers ─────────────────────────────────────────────────
@@ -25,7 +32,12 @@ export default function KitchenOrders() {
     setLoadingId(order.id);
     try {
       await updateOrderStatus(order.id, 'preparing');
-      toast.success(`${order.type === 'table' ? `Masa ${order.tableNumber}` : 'Gel Al'} hazırlanıyor.`);
+      let displayName = 'Gel Al';
+      if (order.type === 'table') {
+        const table = tables.find((t) => t.id === order.tableId);
+        displayName = table ? getTableDisplayName(table) : `Masa ${order.tableNumber}`;
+      }
+      toast.success(`${displayName} hazırlanıyor.`);
     } finally { setLoadingId(null); }
   };
 
@@ -34,12 +46,14 @@ export default function KitchenOrders() {
     try {
       await updateOrderStatus(order.id, 'ready');
       if (order.type === 'table') {
+        const table = tables.find((t) => t.id === order.tableId);
+        const displayName = table ? getTableDisplayName(table) : `Masa ${order.tableNumber}`;
         await createNotification({
           type: 'order_ready_waiter', orderId: order.id,
           tableId: order.tableId, tableNumber: order.tableNumber,
-          message: `Masa ${order.tableNumber} siparişi hazır! 🔔`, targetRole: 'waiter',
+          message: `${displayName} sipariş hazır! 🔔`, targetRole: 'waiter',
         });
-        toast.success(`Garson bilgilendirildi — Masa ${order.tableNumber}`);
+        toast.success(`Garson bilgilendirildi — ${displayName}`);
       }
       if (order.type === 'takeaway') {
         await createNotification({
@@ -89,9 +103,20 @@ export default function KitchenOrders() {
                     <ChefHat className="w-5 h-5 text-brand-600" /> Masa Siparişleri
                   </h2>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {tableOrders.filter(o => ['pending','preparing','ready'].includes(o.status)).map((order) => (
-                      <KitchenOrderCard key={order.id} order={order} onMarkPreparing={handleMarkPreparing} onMarkReady={handleMarkReady} loading={loadingId === order.id} />
-                    ))}
+                    {tableOrders.filter(o => ['pending','preparing','ready'].includes(o.status)).map((order) => {
+                      const table = tables.find((t) => t.id === order.tableId);
+                      const tableDisplayName = table ? getTableDisplayName(table) : `Masa ${order.tableNumber}`;
+                      return (
+                        <KitchenOrderCard 
+                          key={order.id} 
+                          order={order} 
+                          onMarkPreparing={handleMarkPreparing} 
+                          onMarkReady={handleMarkReady} 
+                          loading={loadingId === order.id}
+                          tableDisplayName={tableDisplayName}
+                        />
+                      );
+                    })}
                   </div>
                 </div>
               )}

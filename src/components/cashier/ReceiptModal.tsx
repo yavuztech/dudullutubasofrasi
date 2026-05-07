@@ -5,6 +5,7 @@ import type { Order, OrderItem } from '../../types';
 
 interface Props {
   tableNumber?: number;
+  tableLabel?: string; // birleşik masalar için "Masa 1 - 2"
   customerName?: string;
   customerPhone?: string;
   orders: Order[];
@@ -15,7 +16,7 @@ interface Props {
 
 type PrintMode = 'order' | 'item';
 
-export default function ReceiptModal({ tableNumber, customerName, customerPhone, orders, discountRate = 0, discountApplied = false, onClose }: Props) {
+export default function ReceiptModal({ tableNumber, tableLabel, customerName, customerPhone, orders, discountRate = 0, discountApplied = false, onClose }: Props) {
   const [mode, setMode] = useState<PrintMode>('item');
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -49,7 +50,7 @@ export default function ReceiptModal({ tableNumber, customerName, customerPhone,
         const cls = idx < productSummary.length - 1 ? 'slip page-break' : 'slip';
         let loc = '';
         if (tableNumber) {
-          loc = `<p class="sub">Masa ${tableNumber}</p>`;
+          loc = `<p class="sub">${tableLabel ?? `Masa ${tableNumber}`}</p>`;
         } else if (customerName) {
           loc = `<p class="sub">Gel Al \u2014 ${customerName}</p>`;
           if (customerPhone) loc += `<p class="sub">${customerPhone}</p>`;
@@ -101,7 +102,7 @@ export default function ReceiptModal({ tableNumber, customerName, customerPhone,
           <div className="flex items-center gap-2">
             <Printer className="w-4 h-4 text-brand-600" />
             <h3 className="font-bold text-gray-900">Fiş Yazdır</h3>
-            {tableNumber && <span className="text-xs text-gray-500">• Masa {tableNumber}</span>}
+            {tableNumber && <span className="text-xs text-gray-500">• {tableLabel ?? `Masa ${tableNumber}`}</span>}
             {!tableNumber && customerName && <span className="text-xs text-gray-500">• {customerName}</span>}
           </div>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
@@ -133,7 +134,7 @@ export default function ReceiptModal({ tableNumber, customerName, customerPhone,
                 <div key={item.productId} className="bg-gray-50 rounded-xl p-3 border border-dashed border-gray-200">
                   <p className="text-[10px] text-gray-400 text-center mb-1">{i + 1} / {productSummary.length}</p>
                   <h2 className="text-center font-bold text-sm mb-0.5">Tuba Sofrası</h2>
-                  {tableNumber && <p className="text-center text-gray-500 text-[11px] mb-0.5">Masa {tableNumber}</p>}
+                  {tableNumber && <p className="text-center text-gray-500 text-[11px] mb-0.5">{tableLabel ?? `Masa ${tableNumber}`}</p>}
                   {!tableNumber && customerName && <p className="text-center text-gray-500 text-[11px] mb-0.5">Gel Al — {customerName}</p>}
                   <p className="text-center text-gray-400 text-[10px] mb-1.5">{now}</p>
                   <div className="border-t border-dashed border-gray-300 my-1.5" />
@@ -148,7 +149,7 @@ export default function ReceiptModal({ tableNumber, customerName, customerPhone,
           ) : (
             <div className="bg-gray-50 rounded-xl p-4 font-mono text-xs" ref={printRef}>
               <h2 className="text-center font-bold text-sm mb-0.5">Tuba Sofrası</h2>
-              {tableNumber && <p className="sub text-center text-gray-500 mb-1">Masa {tableNumber}</p>}
+              {tableNumber && <p className="sub text-center text-gray-500 mb-1">{tableLabel ?? `Masa ${tableNumber}`}</p>}
               {!tableNumber && customerName && <p className="sub text-center text-gray-500 mb-0.5">Gel Al — {customerName}</p>}
               {!tableNumber && customerPhone && <p className="sub text-center text-gray-400 mb-1">{customerPhone}</p>}
               <p className="text-center text-gray-400 text-[11px] mb-2">{now}</p>

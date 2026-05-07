@@ -4,10 +4,11 @@ import { ChefHat, Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 
 const ROLE_ROUTES: Record<string, string> = {
-  kitchen: '/kitchen/orders',
-  waiter:  '/waiter',
-  cashier: '/cashier',
-  admin:   '/admin/staff',
+  kitchen:  '/kitchen/orders',
+  waiter:   '/waiter',
+  cashier:  '/cashier',
+  clothing: '/clothing',
+  admin:    '/admin/staff',
 };
 
 export default function LoginPage() {

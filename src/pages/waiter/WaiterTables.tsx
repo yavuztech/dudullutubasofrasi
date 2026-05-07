@@ -10,6 +10,7 @@ import { useProductStore } from '../../stores/productStore';
 import WaiterOrderSheet from '../../components/waiter/WaiterOrderSheet';
 import TableTransferModal from '../../components/shared/TableTransferModal';
 import { tableStatusColor, tableStatusLabel, formatCurrency } from '../../utils/formatters';
+import { getTableDisplayName } from '../../utils/tableUtils';
 import type { Table } from '../../types';
 
 export default function WaiterTables() {
@@ -42,6 +43,9 @@ export default function WaiterTables() {
   };
 
   const handleMarkCleaned = async (tableId: string, tableNumber: number, skipCheck = false) => {
+    const table = tables.find((t) => t.id === tableId);
+    if (!table) return;
+
     // Check for unpaid orders unless explicitly skipped
     if (!skipCheck) {
       setLoadingId(tableId);
@@ -59,16 +63,19 @@ export default function WaiterTables() {
         type: 'table_cleaned',
         tableId,
         tableNumber,
-        message: `Masa ${tableNumber} temizlendi ve hazır. ✅`,
+        message: `${getTableDisplayName(table)} temizlendi ve hazır. ✅`,
         targetRole: 'kitchen',
       });
-      toast.success(`Masa ${tableNumber} temizlendi!`);
+      toast.success(`${getTableDisplayName(table)} temizlendi!`);
     } finally {
       setLoadingId(null);
     }
   };
 
   const handleCloseTable = async (tableId: string, tableNumber: number) => {
+    const table = tables.find((t) => t.id === tableId);
+    if (!table) return;
+
     setLoadingId(tableId);
     try {
       // Yeni oturum başlat — eski siparişler yeni müşteriye karışmaz
@@ -78,20 +85,23 @@ export default function WaiterTables() {
         type: 'table_needs_cleaning',
         tableId,
         tableNumber,
-        message: `Masa ${tableNumber} kapatıldı — temizlenmesi gerekiyor 🧹`,
+        message: `${getTableDisplayName(table)} kapatıldı — temizlenmesi gerekiyor 🧹`,
         targetRole: 'waiter',
       });
-      toast.success(`Masa ${tableNumber} kapatıldı.`);
+      toast.success(`${getTableDisplayName(table)} kapatıldı.`);
     } finally {
       setLoadingId(null);
     }
   };
 
-  const handleStartCleaning = async (tableId: string, tableNumber: number) => {
+  const handleStartCleaning = async (tableId: string) => {
+    const table = tables.find((t) => t.id === tableId);
+    if (!table) return;
+
     setLoadingId(tableId);
     try {
       await updateTableStatus(tableId, 'being_cleaned', undefined);
-      toast(`Masa ${tableNumber} temizleniyor…`, { icon: '🧹' });
+      toast(`${getTableDisplayName(table)} temizleniyor…`, { icon: '🧹' });
     } finally {
       setLoadingId(null);
     }
@@ -119,7 +129,7 @@ export default function WaiterTables() {
             {needsCleaning.map((table) => (
               <div key={table.id} className="card border-2 border-orange-300 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-gray-900">Masa {table.number}</span>
+                  <span className="font-bold text-gray-900">{getTableDisplayName(table)}</span>
                   <div className="flex items-center gap-1">
                     <button onClick={() => setQrTable(table)} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400" title="QR Göster">
                       <QrCode className="w-4 h-4" />
@@ -132,7 +142,7 @@ export default function WaiterTables() {
 
                 {table.status === 'needs_cleaning' && (
                   <button
-                    onClick={() => handleStartCleaning(table.id, table.number)}
+                    onClick={() => handleStartCleaning(table.id)}
                     disabled={loadingId === table.id}
                     className="btn-secondary text-xs py-2 flex items-center justify-center gap-1.5"
                   >
@@ -166,7 +176,7 @@ export default function WaiterTables() {
               className="card flex flex-col gap-2"
             >
               <div className="flex items-center justify-between">
-                <span className="font-bold text-gray-900">Masa {table.number}</span>
+                <span className="font-bold text-gray-900">{getTableDisplayName(table)}</span>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setQrTable(table)} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400" title="QR Göster">
                     <QrCode className="w-4 h-4" />
@@ -229,7 +239,7 @@ export default function WaiterTables() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setQrTable(null)}>
           <div className="bg-white rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between w-full">
-              <p className="font-bold text-xl text-gray-900">Masa {qrTable.number}</p>
+              <p className="font-bold text-xl text-gray-900">{getTableDisplayName(qrTable)}</p>
               <button onClick={() => setQrTable(null)} className="p-1 rounded-lg hover:bg-gray-100">
                 <X className="w-5 h-5 text-gray-500" />
               </button>
@@ -264,20 +274,22 @@ export default function WaiterTables() {
       )}
 
       {/* Unpaid orders warning modal */}
-      {unpaidWarning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setUnpaidWarning(null)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-fade-in">
-            <div className="flex items-start gap-3 mb-4">
-              <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <AlertTriangle className="w-5 h-5 text-orange-600" />
-              </div>
-              <div>
-                <h3 className="font-bold text-gray-900">Ödenmemiş Sipariş!</h3>
-                <p className="text-sm text-gray-600 mt-1">
-                  <strong>Masa {unpaidWarning.tableNumber}</strong> için{' '}
-                  <strong className="text-orange-600">{formatCurrency(unpaidWarning.total)}</strong>{' '}
-                  tutarında ödenmemiş sipariş var.
+      {unpaidWarning && (() => {
+        const warningTable = tables.find((t) => t.id === unpaidWarning.tableId);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setUnpaidWarning(null)} />
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-fade-in">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-orange-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900">Ödenmemiş Sipariş!</h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    <strong>{warningTable ? getTableDisplayName(warningTable) : `Masa ${unpaidWarning.tableNumber}`}</strong> için{' '}
+                    <strong className="text-orange-600">{formatCurrency(unpaidWarning.total)}</strong>{' '}
+                    tutarında ödenmemiş sipariş var.
                 </p>
                 <p className="text-sm text-gray-500 mt-2">
                   Ödeme almadan masayı temizlemek istiyorsanız onaylayın. Hesap için müşteriyi <strong>Kasa</strong>'ya yönlendirin.
@@ -304,7 +316,8 @@ export default function WaiterTables() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Waiter order sheet */}
       {orderTable && (

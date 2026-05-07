@@ -4,6 +4,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import { useTableStore } from '../../stores/tableStore';
 import { useOrderStore } from '../../stores/orderStore';
 import { tableStatusColor, tableStatusLabel, formatCurrency } from '../../utils/formatters';
+import { getTableDisplayName } from '../../utils/tableUtils';
 import type { Order, Table } from '../../types';
 
 export default function KitchenTables() {
@@ -36,7 +37,7 @@ export default function KitchenTables() {
           return (
             <div key={table.id} className="card flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-gray-900">Masa {table.number}</span>
+                  <span className="font-bold text-gray-900">{getTableDisplayName(table)}</span>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setQrTable(table)}
@@ -74,7 +75,7 @@ export default function KitchenTables() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setQrTable(null)}>
           <div className="bg-white rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between w-full">
-              <p className="font-bold text-xl text-gray-900">Masa {qrTable.number}</p>
+              <p className="font-bold text-xl text-gray-900">{getTableDisplayName(qrTable)}</p>
               <button onClick={() => setQrTable(null)} className="p-1 rounded-lg hover:bg-gray-100">
                 <X className="w-5 h-5 text-gray-500" />
               </button>

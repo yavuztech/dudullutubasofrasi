@@ -1,10 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Plus, Edit2, Trash2, Eye, EyeOff, Tag, X, Check } from 'lucide-react';
+import { Plus, Edit2, Trash2, Eye, EyeOff, Tag, X, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useProductStore } from '../../stores/productStore';
 import ProductForm from '../../components/kitchen/ProductForm';
 import { formatCurrency } from '../../utils/formatters';
-import type { Product } from '../../types';
+import type { Product, Category } from '../../types';
+
+const KITCHEN_STATIONS = [
+  { value: undefined, label: 'Yok' },
+  { value: 'station1', label: 'İstasyon 1' },
+  { value: 'station2', label: 'İstasyon 2' },
+  { value: 'station3', label: 'İstasyon 3' },
+] as const;
 
 export default function AdminProducts() {
   const { products, categories, subscribe, subscribeCategories, deleteProduct, toggleAvailability, addCategory, updateCategory, deleteCategory } =
@@ -12,10 +19,8 @@ export default function AdminProducts() {
   const [showForm, setShowForm] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | undefined>();
   const [filterCat, setFilterCat] = useState<string>('all');
-  const [showCatInput, setShowCatInput] = useState(false);
-  const [newCatName, setNewCatName] = useState('');
-  const [editingCatId, setEditingCatId] = useState<string | null>(null);
-  const [editingCatName, setEditingCatName] = useState('');
+  const [showCatForm, setShowCatForm] = useState(false);
+  const [editingCat, setEditingCat] = useState<Category | null>(null);
 
   useEffect(() => {
     const u1 = subscribe();
@@ -34,21 +39,20 @@ export default function AdminProducts() {
     toast.success(product.available ? 'Ürün kapatıldı.' : 'Ürün açıldı.');
   };
 
-  const handleAddCategory = async () => {
-    const name = newCatName.trim();
-    if (!name) return;
-    await addCategory(name, categories.length);
-    toast.success(`"${name}" kategorisi eklendi.`);
-    setNewCatName('');
-    setShowCatInput(false);
-  };
-
-  const handleUpdateCategory = async (id: string) => {
-    const name = editingCatName.trim();
-    if (!name) return;
-    await updateCategory(id, name);
-    toast.success('Kategori güncellendi.');
-    setEditingCatId(null);
+  const handleSaveCategory = async (data: { name: string; kitchenStation?: string }) => {
+    try {
+      if (editingCat) {
+        await updateCategory(editingCat.id, data);
+        toast.success('Kategori güncellendi.');
+      } else {
+        await addCategory(data.name, categories.length, 'food', data.kitchenStation);
+        toast.success('Kategori eklendi.');
+      }
+      setShowCatForm(false);
+      setEditingCat(null);
+    } catch (err) {
+      toast.error('Kaydedilemedi: ' + (err instanceof Error ? err.message : 'Bilinmeyen hata'));
+    }
   };
 
   const handleDeleteCategory = async (id: string, name: string) => {
@@ -73,53 +77,33 @@ export default function AdminProducts() {
           </button>
           {categories.map((c) => (
             <div key={c.id} className="flex items-center gap-1 flex-shrink-0">
-              {editingCatId === c.id ? (
-                <div className="flex items-center gap-1">
-                  <input
-                    type="text"
-                    value={editingCatName}
-                    onChange={(e) => setEditingCatName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleUpdateCategory(c.id); if (e.key === 'Escape') setEditingCatId(null); }}
-                    className="px-2 py-1 text-sm border border-brand-400 rounded-lg outline-none w-28"
-                    autoFocus
-                  />
-                  <button onClick={() => handleUpdateCategory(c.id)} className="p-1 text-green-600 hover:bg-green-50 rounded">
-                    <Check className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => setEditingCatId(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-0.5">
-                  <button
-                    onClick={() => setFilterCat(c.id)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${filterCat === c.id ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600'}`}
-                  >
-                    {c.name}
-                  </button>
-                  <button
-                    onClick={() => { setEditingCatId(c.id); setEditingCatName(c.name); }}
-                    className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                    title="Düzenle"
-                  >
-                    <Edit2 className="w-3 h-3" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteCategory(c.id, c.name)}
-                    className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                    title="Sil"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              )}
+              <button
+                onClick={() => setFilterCat(c.id)}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1.5 ${filterCat === c.id ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600'}`}
+              >
+                {c.name}
+                {c.kitchenStation && <Printer className="w-3 h-3" />}
+              </button>
+              <button
+                onClick={() => { setEditingCat(c); setShowCatForm(true); }}
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                title="Düzenle"
+              >
+                <Edit2 className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => handleDeleteCategory(c.id, c.name)}
+                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                title="Sil"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
             </div>
           ))}
         </div>
         <div className="flex gap-2 flex-shrink-0">
           <button
-            onClick={() => setShowCatInput(true)}
+            onClick={() => { setEditingCat(null); setShowCatForm(true); }}
             className="btn-secondary flex items-center gap-2 text-sm py-2 px-3"
           >
             <Tag className="w-4 h-4" />
@@ -134,25 +118,6 @@ export default function AdminProducts() {
           </button>
         </div>
       </div>
-
-      {/* Category input popup */}
-      {showCatInput && (
-        <div className="mb-4 flex gap-2 items-center bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-          <input
-            type="text"
-            value={newCatName}
-            onChange={(e) => setNewCatName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleAddCategory(); if (e.key === 'Escape') setShowCatInput(false); }}
-            placeholder="Kategori adı (ör: Ana Yemekler)"
-            className="input flex-1"
-            autoFocus
-          />
-          <button onClick={handleAddCategory} className="btn-primary text-sm py-2 px-4">Ekle</button>
-          <button onClick={() => { setShowCatInput(false); setNewCatName(''); }} className="p-2 rounded-lg hover:bg-gray-100">
-            <X className="w-4 h-4 text-gray-500" />
-          </button>
-        </div>
-      )}
 
       {/* Product list */}
       <div className="grid gap-3 sm:grid-cols-2">
@@ -223,6 +188,82 @@ export default function AdminProducts() {
           nextSortOrder={products.length}
         />
       )}
+
+      {showCatForm && (
+        <CategoryFormModal
+          category={editingCat}
+          onSave={handleSaveCategory}
+          onClose={() => { setShowCatForm(false); setEditingCat(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Category Form Modal ─────────────────────────────────────────────────────
+interface CategoryFormProps {
+  category: Category | null;
+  onSave: (data: { name: string; kitchenStation?: string }) => void;
+  onClose: () => void;
+}
+
+function CategoryFormModal({ category, onSave, onClose }: CategoryFormProps) {
+  const [name, setName] = useState(category?.name ?? '');
+  const [kitchenStation, setKitchenStation] = useState<string | undefined>(category?.kitchenStation);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onSave({ name: name.trim(), kitchenStation });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <h2 className="font-bold text-gray-900">{category ? 'Kategori Düzenle' : 'Yeni Kategori'}</h2>
+          <button type="button" onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 p-4 flex flex-col gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Kategori Adı *</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="input"
+              placeholder="Ana Yemekler, İçecekler vb."
+              required
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Mutfak İstasyonu <span className="text-gray-400 text-xs">(Fiş Yazdırma)</span>
+            </label>
+            <select
+              value={kitchenStation ?? ''}
+              onChange={(e) => setKitchenStation(e.target.value || undefined)}
+              className="input"
+            >
+              {KITCHEN_STATIONS.map((s) => (
+                <option key={s.value ?? 'none'} value={s.value ?? ''}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Bu kategorideki ürünler, seçilen istasyonun yazıcısına otomatik gönderilir.
+            </p>
+          </div>
+          <button type="submit" className="btn-primary mt-2">
+            {category ? 'Güncelle' : 'Ekle'}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

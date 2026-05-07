@@ -10,6 +10,7 @@ import {
   orderBy,
   serverTimestamp,
   Timestamp,
+  increment,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import type { Product, Category } from '../types';
@@ -30,8 +31,9 @@ interface ProductStore {
   updateProduct: (id: string, data: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
   toggleAvailability: (id: string, available: boolean) => Promise<void>;
-  addCategory: (name: string, sortOrder: number) => Promise<string>;
-  updateCategory: (id: string, name: string) => Promise<void>;
+  updateStock: (id: string, delta: number) => Promise<void>;
+  addCategory: (name: string, sortOrder: number, department?: 'food' | 'clothing', kitchenStation?: string) => Promise<string>;
+  updateCategory: (id: string, data: Partial<Omit<Category, 'id'>>) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
 }
 
@@ -85,13 +87,17 @@ export const useProductStore = create<ProductStore>((set) => ({
     await updateDoc(doc(db, 'products', id), { available, updatedAt: serverTimestamp() });
   },
 
-  addCategory: async (name, sortOrder) => {
-    const ref = await addDoc(collection(db, 'categories'), { name, sortOrder });
+  updateStock: async (id, delta) => {
+    await updateDoc(doc(db, 'products', id), { stock: increment(delta), updatedAt: serverTimestamp() });
+  },
+
+  addCategory: async (name, sortOrder, department = 'food', kitchenStation) => {
+    const ref = await addDoc(collection(db, 'categories'), { name, sortOrder, department, kitchenStation });
     return ref.id;
   },
 
-  updateCategory: async (id, name) => {
-    await updateDoc(doc(db, 'categories', id), { name });
+  updateCategory: async (id, data) => {
+    await updateDoc(doc(db, 'categories', id), data);
   },
 
   deleteCategory: async (id) => {

@@ -7,6 +7,7 @@ import { useProductStore } from '../../stores/productStore';
 import { useOrderStore } from '../../stores/orderStore';
 import { useTableStore } from '../../stores/tableStore';
 import { formatCurrency } from '../../utils/formatters';
+import { getTableDisplayName } from '../../utils/tableUtils';
 import type { CartItem, Order, OrderItem, Table } from '../../types';
 
 interface Props {
@@ -107,7 +108,7 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
       if (table.status === 'available' || table.status === 'needs_cleaning' || table.status === 'being_cleaned') {
         await updateTableStatus(table.id, 'occupied', orderId);
       }
-      toast.success(`Masa ${table.number} siparişi mutfağa gönderildi!`);
+      toast.success(`${getTableDisplayName(table)} sipariş mutfağa gönderildi!`);
       setCart([]);
       setTab('existing');
     } catch {
@@ -153,7 +154,7 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
               <ChefHat className="w-4 h-4 text-brand-600" />
             </div>
             <div>
-              <p className="font-bold text-gray-900 text-sm">Masa {table.number}</p>
+              <p className="font-bold text-gray-900 text-sm">{getTableDisplayName(table)}</p>
               <p className="text-[11px] text-gray-400">Sipariş yönetimi</p>
             </div>
           </div>

@@ -4,6 +4,7 @@ import {
   onSnapshot,
   addDoc,
   updateDoc,
+  deleteDoc,
   doc,
   query,
   orderBy,
@@ -25,7 +26,8 @@ interface TableStore {
   tables: Table[];
   loading: boolean;
   subscribe: () => () => void;
-  addTable: (number: number, capacity: number) => Promise<string>;
+  addTable: (number: number, capacity: number, section?: 'normal' | 'family') => Promise<string>;
+  deleteTable: (id: string) => Promise<void>;
   updateTableStatus: (id: string, status: TableStatus, orderId?: string) => Promise<void>;
   newSession: (id: string) => Promise<void>;
   getTableByQR: (qrToken: string) => Table | undefined;
@@ -50,16 +52,21 @@ export const useTableStore = create<TableStore>((set, get) => ({
     return unsub;
   },
 
-  addTable: async (number, capacity) => {
+  addTable: async (number, capacity, section = 'normal') => {
     const ref = await addDoc(collection(db, 'tables'), {
       number,
       capacity,
       status: 'available' as TableStatus,
       qrToken: nanoid(16),
       sessionId: nanoid(12),
+      section,
       updatedAt: serverTimestamp(),
     });
     return ref.id;
+  },
+
+  deleteTable: async (id) => {
+    await deleteDoc(doc(db, 'tables', id));
   },
 
   newSession: async (id) => {

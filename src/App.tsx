@@ -30,6 +30,11 @@ import AdminStaff    from './pages/admin/AdminStaff';
 import AdminOrders   from './pages/admin/AdminOrders';
 import AdminProducts from './pages/admin/AdminProducts';
 import AdminTakeaway from './pages/admin/AdminTakeaway';
+import AdminClothing from './pages/admin/AdminClothing';
+import AdminSettings from './pages/admin/AdminSettings';
+
+// Clothing
+import ClothingCashierPage from './pages/cashier/ClothingCashierPage';
 
 // FCM token sync
 import { getFCMToken } from './lib/notifications';
@@ -94,6 +99,15 @@ function App() {
             } />
           </Route>
 
+          {/* ── Clothing cashier routes (role: clothing | admin) ── */}
+          <Route element={<ProtectedRoute allowedRoles={['clothing', 'admin']} />}>
+            <Route path="/clothing" element={
+              <StaffLayout title="Giyim Kasası">
+                <ClothingCashierPage />
+              </StaffLayout>
+            } />
+          </Route>
+
           {/* ── Waiter routes (role: waiter | admin) ── */}
           <Route element={<ProtectedRoute allowedRoles={['waiter', 'admin']} />}>
             <Route path="/waiter" element={
@@ -133,6 +147,16 @@ function App() {
             <Route path="/admin/takeaway" element={
               <StaffLayout title="Yönetim — Gel Al">
                 <AdminTakeaway />
+              </StaffLayout>
+            } />
+            <Route path="/admin/clothing" element={
+              <StaffLayout title="Yönetim — Giyim">
+                <AdminClothing />
+              </StaffLayout>
+            } />
+            <Route path="/admin/settings" element={
+              <StaffLayout title="Yönetim — Ayarlar">
+                <AdminSettings />
               </StaffLayout>
             } />
           </Route>
