@@ -488,56 +488,13 @@ export default function CashierPage() {
                   ))}
                   {editItems.length === 0 && <p className="text-xs text-center text-orange-600 py-1">Tüm ürünler kaldırıldı — sipariş iptal edilecek.</p>}
 
-                  {/* Ürün ekleme paneli */}
-                  {editShowAdd ? (
-                    <div className="border border-gray-200 rounded-xl bg-gray-50 flex flex-col">
-                      {/* Header */}
-                      <div className="flex items-center justify-between p-3 border-b border-gray-200 flex-shrink-0">
-                        <p className="text-xs font-bold text-gray-600">Ürün Ekle</p>
-                        <button onClick={() => setEditShowAdd(false)} className="p-0.5 rounded hover:bg-gray-200"><X className="w-3.5 h-3.5 text-gray-500" /></button>
-                      </div>
-                      
-                      {/* Kategori seçimi */}
-                      <div className="flex gap-1.5 overflow-x-auto no-scrollbar px-3 pt-2 pb-2 flex-shrink-0">
-                        {categories.map((cat) => (
-                          <button key={cat.id} onClick={() => setActiveCategory(cat.id)} className={`flex-shrink-0 px-2.5 py-0.5 rounded-full text-xs font-semibold transition-colors ${activeCategory === cat.id ? 'bg-brand-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>
-                            {cat.name}
-                          </button>
-                        ))}
-                      </div>
-                      
-                      {/* Ürün listesi (scrollable, sabit max-height) */}
-                      <div className="overflow-y-auto px-3 pb-3 max-h-40">
-                        <div className="flex flex-col gap-1">
-                          {(grouped[activeCategory] ?? []).map((p) => {
-                            const qty = editItems.find((i) => i.productId === p.id)?.quantity ?? 0;
-                            return (
-                              <div key={p.id} className="flex items-center gap-2 bg-white rounded-lg p-2">
-                                <p className="flex-1 text-xs font-medium text-gray-900 truncate">{p.name}</p>
-                                <p className="text-xs text-brand-600 font-semibold flex-shrink-0">{formatCurrency(p.price)}</p>
-                                <div className="flex items-center gap-1 flex-shrink-0">
-                                  {qty > 0 ? (
-                                    <>
-                                      <button onClick={() => removeFromEdit(p.id)} className="w-6 h-6 rounded border border-gray-200 flex items-center justify-center hover:bg-red-50"><Minus className="w-3 h-3" /></button>
-                                      <span className="w-4 text-center text-xs font-bold">{qty}</span>
-                                    </>
-                                  ) : <span className="w-10" />}
-                                  <button onClick={() => addToEdit(p)} className="w-6 h-6 bg-brand-600 text-white rounded flex items-center justify-center hover:bg-brand-700"><Plus className="w-3 h-3" /></button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setEditShowAdd(true)}
-                      className="w-full flex items-center justify-center gap-1.5 border border-dashed border-gray-300 hover:border-brand-400 text-gray-500 hover:text-brand-600 rounded-lg py-2 text-xs font-semibold transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Ürün Ekle
-                    </button>
-                  )}
+                  {/* Ürün Ekle butonu */}
+                  <button
+                    onClick={() => setEditShowAdd(true)}
+                    className="w-full flex items-center justify-center gap-1.5 border border-dashed border-gray-300 hover:border-brand-400 text-gray-500 hover:text-brand-600 rounded-lg py-2 text-xs font-semibold transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Ürün Ekle
+                  </button>
 
                   <div className="flex gap-2 mt-1">
                     <button onClick={() => { setEditingOrder(null); setEditShowAdd(false); }} className="btn-secondary flex-1 py-1.5 text-xs">Vazgeç</button>
@@ -680,69 +637,21 @@ export default function CashierPage() {
               })}
 
               {/* Ürün Ekle butonu (düzenleme yoksa) */}
-              {!editingOrder && !addMode && (
-                <button onClick={() => { setAddMode(true); setAddCart([]); }} className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 hover:border-brand-400 text-gray-500 hover:text-brand-600 rounded-xl py-3 text-sm font-semibold transition-colors">
-                  <Plus className="w-4 h-4" /> Ürün Ekle
+              {!editingOrder && (
+                <button 
+                  onClick={() => { setAddMode(true); setAddCart([]); }} 
+                  className={`w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition-colors ${
+                    addMode 
+                      ? 'bg-brand-600 hover:bg-brand-700 text-white shadow-sm' 
+                      : 'border-2 border-dashed border-gray-200 hover:border-brand-400 text-gray-500 hover:text-brand-600'
+                  }`}
+                >
+                  {addMode ? (
+                    <><ShoppingCart className="w-4 h-4" /> Ürün Ekleniyor ({cartCount})</>
+                  ) : (
+                    <><Plus className="w-4 h-4" /> Ürün Ekle</>
+                  )}
                 </button>
-              )}
-
-              {/* Ürün ekleme paneli */}
-              {addMode && (
-                <div className="border-2 border-brand-200 rounded-xl flex flex-col bg-white">
-                  {/* Header */}
-                  <div className="flex items-center justify-between p-3 border-b border-gray-100 flex-shrink-0">
-                    <p className="text-sm font-bold text-brand-700">Ürün Ekle</p>
-                    <button onClick={() => { setAddMode(false); setAddCart([]); }} className="p-1 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-500" /></button>
-                  </div>
-                  
-                  {/* Kategori seçimi */}
-                  <div className="flex gap-1.5 overflow-x-auto no-scrollbar px-3 pt-3 pb-2 flex-shrink-0">
-                    {categories.map((cat) => (
-                      <button key={cat.id} onClick={() => setActiveCategory(cat.id)} className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${activeCategory === cat.id ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                        {cat.name}
-                      </button>
-                    ))}
-                  </div>
-                  
-                  {/* Ürün listesi (scrollable, sabit max-height) */}
-                  <div className="overflow-y-auto px-3 py-2 max-h-40">
-                    <div className="flex flex-col gap-2">
-                      {(grouped[activeCategory] ?? []).map((p) => {
-                        const qty = cartQty(p.id);
-                        return (
-                          <div key={p.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                            <p className="flex-1 text-sm font-medium text-gray-900 truncate">{p.name}</p>
-                            <p className="text-xs text-brand-600 font-semibold flex-shrink-0">{formatCurrency(p.price)}</p>
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              {qty > 0 ? (
-                                <>
-                                  <button onClick={() => removeFromCart(p.id)} className="w-6 h-6 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-100"><Minus className="w-3 h-3" /></button>
-                                  <span className="w-4 text-center text-sm font-bold">{qty}</span>
-                                </>
-                              ) : <span className="w-10" />}
-                              <button onClick={() => addToCart(p)} className="w-6 h-6 bg-brand-600 text-white rounded-lg flex items-center justify-center hover:bg-brand-700"><Plus className="w-3 h-3" /></button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  
-                  {/* Footer (sticky bottom) */}
-                  <div className="flex items-center gap-2 p-3 border-t border-gray-100 bg-white flex-shrink-0">
-                    <ShoppingCart className="w-4 h-4 text-brand-600 flex-shrink-0" />
-                    <span className="text-sm text-gray-600 flex-1">
-                      {cartCount > 0 ? `${cartCount} ürün • ${formatCurrency(cartTotal)}` : 'Ürün seçin'}
-                    </span>
-                    <button 
-                      onClick={sendAddCart} 
-                      disabled={addLoading || cartCount === 0} 
-                      className="btn-primary px-4 py-2 text-xs flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {addLoading ? 'Gönderiliyor…' : 'Mutfağa Gönder'}
-                    </button>
-                  </div>
-                </div>
               )}
             </div>
 
@@ -816,6 +725,185 @@ export default function CashierPage() {
           discountApplied={applyDiscount && !!settings.staffDiscount}
           onClose={() => setShowReceipt(false)}
         />
+      )}
+
+      {/* Ürün Ekleme Popup - Edit Mode */}
+      {editShowAdd && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setEditShowAdd(false)} />
+          <div className="relative bg-white w-full max-w-2xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col m-4">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
+              <h3 className="font-bold text-gray-900">Ürün Ekle</h3>
+              <button onClick={() => setEditShowAdd(false)} className="p-1.5 rounded-lg hover:bg-gray-100">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            
+            {/* Kategori seçimi */}
+            <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 pt-4 pb-3 flex-shrink-0 border-b border-gray-100">
+              {categories.map((cat) => (
+                <button 
+                  key={cat.id} 
+                  onClick={() => setActiveCategory(cat.id)} 
+                  className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                    activeCategory === cat.id 
+                      ? 'bg-brand-600 text-white shadow-sm' 
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+            
+            {/* Ürün listesi (scrollable) */}
+            <div className="overflow-y-auto flex-1 px-4 py-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {(grouped[activeCategory] ?? []).map((p) => {
+                  const qty = editItems.find((i) => i.productId === p.id)?.quantity ?? 0;
+                  return (
+                    <div key={p.id} className="flex items-center gap-3 bg-gray-50 hover:bg-gray-100 rounded-xl p-3 transition-colors">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{p.name}</p>
+                        <p className="text-sm text-brand-600 font-semibold">{formatCurrency(p.price)}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {qty > 0 ? (
+                          <>
+                            <button 
+                              onClick={() => removeFromEdit(p.id)} 
+                              className="w-8 h-8 rounded-lg border border-gray-200 bg-white flex items-center justify-center hover:bg-red-50 hover:border-red-200 transition-colors"
+                            >
+                              <Minus className="w-4 h-4 text-gray-600" />
+                            </button>
+                            <span className="w-6 text-center font-bold">{qty}</span>
+                          </>
+                        ) : <span className="w-16" />}
+                        <button 
+                          onClick={() => addToEdit(p)} 
+                          className="w-8 h-8 bg-brand-600 text-white rounded-lg flex items-center justify-center hover:bg-brand-700 transition-colors shadow-sm"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            {/* Footer */}
+            <div className="flex items-center justify-between p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <ShoppingCart className="w-5 h-5 text-brand-600" />
+                <span className="font-medium text-gray-900">
+                  {editItems.length > 0 ? `${editItems.length} ürün seçildi` : 'Ürün seçin'}
+                </span>
+              </div>
+              <button 
+                onClick={() => setEditShowAdd(false)} 
+                className="btn-primary px-6 py-2"
+              >
+                Tamam
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ürün Ekleme Popup - Add Mode */}
+      {addMode && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => { setAddMode(false); setAddCart([]); }} />
+          <div className="relative bg-white w-full max-w-2xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col m-4">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
+              <h3 className="font-bold text-gray-900">Ürün Ekle</h3>
+              <button onClick={() => { setAddMode(false); setAddCart([]); }} className="p-1.5 rounded-lg hover:bg-gray-100">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            
+            {/* Kategori seçimi */}
+            <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 pt-4 pb-3 flex-shrink-0 border-b border-gray-100">
+              {categories.map((cat) => (
+                <button 
+                  key={cat.id} 
+                  onClick={() => setActiveCategory(cat.id)} 
+                  className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                    activeCategory === cat.id 
+                      ? 'bg-brand-600 text-white shadow-sm' 
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+            
+            {/* Ürün listesi (scrollable) */}
+            <div className="overflow-y-auto flex-1 px-4 py-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {(grouped[activeCategory] ?? []).map((p) => {
+                  const qty = cartQty(p.id);
+                  return (
+                    <div key={p.id} className="flex items-center gap-3 bg-gray-50 hover:bg-gray-100 rounded-xl p-3 transition-colors">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{p.name}</p>
+                        <p className="text-sm text-brand-600 font-semibold">{formatCurrency(p.price)}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {qty > 0 ? (
+                          <>
+                            <button 
+                              onClick={() => removeFromCart(p.id)} 
+                              className="w-8 h-8 rounded-lg border border-gray-200 bg-white flex items-center justify-center hover:bg-red-50 hover:border-red-200 transition-colors"
+                            >
+                              <Minus className="w-4 h-4 text-gray-600" />
+                            </button>
+                            <span className="w-6 text-center font-bold">{qty}</span>
+                          </>
+                        ) : <span className="w-16" />}
+                        <button 
+                          onClick={() => addToCart(p)} 
+                          className="w-8 h-8 bg-brand-600 text-white rounded-lg flex items-center justify-center hover:bg-brand-700 transition-colors shadow-sm"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            {/* Footer */}
+            <div className="flex items-center justify-between p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <ShoppingCart className="w-5 h-5 text-brand-600" />
+                <span className="font-medium text-gray-900">
+                  {cartCount > 0 ? `${cartCount} ürün • ${formatCurrency(cartTotal)}` : 'Ürün seçin'}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => { setAddMode(false); setAddCart([]); }} 
+                  className="btn-secondary px-4 py-2"
+                >
+                  İptal
+                </button>
+                <button 
+                  onClick={() => { sendAddCart(); setAddMode(false); }} 
+                  disabled={addLoading || cartCount === 0} 
+                  className="btn-primary px-6 py-2 disabled:opacity-50"
+                >
+                  {addLoading ? 'Gönderiliyor…' : 'Mutfağa Gönder'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {receiptOrder && (
