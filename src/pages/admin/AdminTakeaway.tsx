@@ -29,7 +29,7 @@ export default function AdminTakeaway() {
     setDiscountRate(String(settings.staffDiscountRate ?? 20));
   }, [settings.staffDiscountRate]);
 
-  const handleToggle = async (key: keyof Pick<GelAlSettings, 'phoneVerification' | 'whatsappEnabled' | 'staffDiscount'>) => {
+  const handleToggle = async (key: keyof Pick<GelAlSettings, 'phoneVerification' | 'whatsappEnabled' | 'staffDiscount' | 'enableTableCleaning'>) => {
     try {
       await updateSettings({ [key]: !settings[key] });
     } catch (e: unknown) {
@@ -261,6 +261,35 @@ export default function AdminTakeaway() {
               <p className="text-xs text-green-700 mt-1.5">✓ Aktif oran: %{settings.staffDiscountRate}</p>
             )}
           </div>
+        )}
+      </div>
+
+      {/* ── Masa Temizleme Ayarları ── */}
+      <div className="card p-4 mb-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Settings className="w-4 h-4 text-brand-600" />
+          <h3 className="font-bold text-gray-900 text-sm">Masa Yönetimi</h3>
+        </div>
+        <div className="flex items-center justify-between py-3">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Masa Temizleme İşleri</p>
+            <p className="text-xs text-gray-500 mt-0.5">Garson ekranında masa temizleme görevlerini göster</p>
+          </div>
+          <button
+            onClick={() => handleToggle('enableTableCleaning')}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              settings.enableTableCleaning ? 'bg-brand-600' : 'bg-gray-200'
+            }`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+              settings.enableTableCleaning ? 'translate-x-6' : 'translate-x-1'
+            }`} />
+          </button>
+        </div>
+        {!settings.enableTableCleaning && (
+          <p className="text-xs text-amber-600 mt-2">
+            ⚠️ Kapalı olduğunda garsonlar masa temizleme işlerini göremez. Masalar doğrudan "Boş" durumuna geçer.
+          </p>
         )}
       </div>
 

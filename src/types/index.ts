@@ -146,6 +146,7 @@ export interface GelAlSettings {
   whatsappNumber: string;
   staffDiscount: boolean;       // Personel indirimi aktif mi
   staffDiscountRate: number;    // 0-100 arası yüzde
+  enableTableCleaning: boolean; // Masa temizleme işi gösterilsin mi (garson ekranında)
 }
 
 // ─── Printer Settings (Firestore: settings/printer-config) ───

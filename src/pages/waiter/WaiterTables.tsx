@@ -7,6 +7,7 @@ import { db } from '../../lib/firebase';
 import { useTableStore } from '../../stores/tableStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useProductStore } from '../../stores/productStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import WaiterOrderSheet from '../../components/waiter/WaiterOrderSheet';
 import TableTransferModal from '../../components/shared/TableTransferModal';
 import { tableStatusColor, tableStatusLabel, formatCurrency } from '../../utils/formatters';
@@ -17,6 +18,7 @@ export default function WaiterTables() {
   const { tables, subscribe, updateTableStatus, newSession } = useTableStore();
   const { createNotification } = useNotificationStore();
   const { subscribe: subscribeProducts, subscribeCategories } = useProductStore();
+  const { settings, subscribe: subscribeSettings } = useSettingsStore();
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [qrTable, setQrTable] = useState<Table | null>(null);
   const [orderTable, setOrderTable] = useState<Table | null>(null);
@@ -31,7 +33,8 @@ export default function WaiterTables() {
     const u1 = subscribe();
     const u2 = subscribeProducts();
     const u3 = subscribeCategories();
-    return () => { u1(); u2(); u3(); };
+    const u4 = subscribeSettings();
+    return () => { u1(); u2(); u3(); u4(); };
   }, []);
 
   const checkUnpaid = async (tableId: string): Promise<number> => {
@@ -81,15 +84,23 @@ export default function WaiterTables() {
     try {
       // Yeni oturum başlat — eski siparişler yeni müşteriye karışmaz
       await newSession(tableId);
-      await updateTableStatus(tableId, 'needs_cleaning', undefined);
-      await createNotification({
-        type: 'table_needs_cleaning',
-        tableId,
-        tableNumber,
-        message: `${getTableDisplayName(table)} kapatıldı — temizlenmesi gerekiyor 🧹`,
-        targetRole: 'waiter',
-      });
-      toast.success(`${getTableDisplayName(table)} kapatıldı.`);
+      
+      // Ayara göre temizleme veya direkt boş
+      const newStatus = settings.enableTableCleaning ? 'needs_cleaning' : 'available';
+      await updateTableStatus(tableId, newStatus, undefined);
+      
+      if (settings.enableTableCleaning) {
+        await createNotification({
+          type: 'table_needs_cleaning',
+          tableId,
+          tableNumber,
+          message: `${getTableDisplayName(table)} kapatıldı — temizlenmesi gerekiyor 🧹`,
+          targetRole: 'waiter',
+        });
+        toast.success(`${getTableDisplayName(table)} kapatıldı.`);
+      } else {
+        toast.success(`${getTableDisplayName(table)} boşa alındı.`);
+      }
     } finally {
       setLoadingId(null);
     }
@@ -156,7 +167,7 @@ export default function WaiterTables() {
       </div>
 
       {/* Tables needing cleaning — highlighted */}
-      {filteredNeedsCleaning.length > 0 && (
+      {settings.enableTableCleaning && filteredNeedsCleaning.length > 0 && (
         <div className="mb-6">
           <h3 className="text-sm font-semibold text-orange-700 flex items-center gap-1.5 mb-2">
             <Sparkles className="w-4 h-4" />
@@ -234,14 +245,25 @@ export default function WaiterTables() {
                 </button>
               )}
               {table.status === 'occupied' && (
-                <button
-                  onClick={() => handleCloseTable(table.id, table.number)}
-                  disabled={loadingId === table.id}
-                  className="w-full flex items-center justify-center gap-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs font-semibold py-2 rounded-xl transition-colors disabled:opacity-50"
-                >
-                  <DoorOpen className="w-3.5 h-3.5" />
-                  {loadingId === table.id ? 'İşleniyor…' : 'Masayı Kapat'}
-                </button>
+                settings.enableTableCleaning ? (
+                  <button
+                    onClick={() => handleCloseTable(table.id, table.number)}
+                    disabled={loadingId === table.id}
+                    className="w-full flex items-center justify-center gap-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs font-semibold py-2 rounded-xl transition-colors disabled:opacity-50"
+                  >
+                    <DoorOpen className="w-3.5 h-3.5" />
+                    {loadingId === table.id ? 'İşleniyor…' : 'Masayı Kapat'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleCloseTable(table.id, table.number)}
+                    disabled={loadingId === table.id}
+                    className="w-full flex items-center justify-center gap-1.5 bg-green-50 hover:bg-green-100 text-green-700 text-xs font-semibold py-2 rounded-xl transition-colors disabled:opacity-50"
+                  >
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    {loadingId === table.id ? 'İşleniyor…' : 'Masayı Boşalt'}
+                  </button>
+                )
               )}
               {table.status === 'occupied' && (
                 <button
