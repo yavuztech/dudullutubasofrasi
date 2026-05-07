@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp, arrayUnion } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useTableStore } from '../../stores/tableStore';
+import { getTableDisplayName, getMergedTableDisplayName } from '../../utils/tableUtils';
 import type { Table } from '../../types';
 
 interface Props {
@@ -30,15 +31,26 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
   const statusLabel = (t: Table) => {
     if (t.status === 'occupied') {
       const nums = [t.number, ...(t.mergedTableNumbers ?? [])];
-      return `Dolu — Masa ${nums.join(' - ')}`;
+      const displayName = nums.length > 1 
+        ? getMergedTableDisplayName(nums, t.section)
+        : getTableDisplayName(t);
+      return `Dolu — ${displayName}`;
     }
     if (t.status === 'needs_cleaning') return 'Temizlik Bekleniyor';
     return 'Boş';
   };
 
+  // Kaynak masa ile aynı bölümdeki masaları filtrele
+  const sourceSection = sourceTable.section ?? 'normal';
+  
   const candidates = tables.filter((t) => {
     if (t.id === sourceTable.id) return false;
     if (t.mergedIntoId) return false; // zaten başka masaya eklenmiş
+    
+    // Sadece aynı section'daki masalar
+    const targetSection = t.section ?? 'normal';
+    if (sourceSection !== targetSection) return false;
+    
     if (mode === 'transfer') return t.status === 'available' || t.status === 'needs_cleaning';
     if (mode === 'join')     return t.status === 'available' || t.status === 'needs_cleaning';
     // merge → dolu masalar
@@ -46,9 +58,9 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
   });
 
   const descriptions: Record<Mode, string> = {
-    transfer: `Masa ${sourceTable.number}'deki siparişler seçilen boş masaya taşınır. Kaynak masa temizlemeye alınır.`,
-    join:     `Seçilen boş masa fiziksel olarak Masa ${sourceTable.number}'e eklenir. Kasa ekranında "Masa ${sourceTable.number} - X" şeklinde görünür. Siparişler aynı hesapta toplanır.`,
-    merge:    `Masa ${sourceTable.number}'deki siparişler seçilen dolu masanın hesabına eklenir. Kaynak masa temizlemeye alınır.`,
+    transfer: `${getTableDisplayName(sourceTable)}'deki siparişler seçilen boş masaya taşınır. Kaynak masa temizlemeye alınır.`,
+    join:     `Seçilen boş masa fiziksel olarak ${getTableDisplayName(sourceTable)}'e eklenir. Siparişler aynı hesapta toplanır.`,
+    merge:    `${getTableDisplayName(sourceTable)}'deki siparişler seçilen dolu masanın hesabına eklenir. Kaynak masa temizlemeye alınır.`,
   };
 
   const handleSubmit = async () => {
@@ -72,7 +84,7 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
           mergedTableNumbers: arrayUnion(target.number),
           updatedAt: serverTimestamp(),
         });
-        toast.success(`Masa ${target.number}, Masa ${sourceTable.number}'e eklendi.`);
+        toast.success(`${getTableDisplayName(target)}, ${getTableDisplayName(sourceTable)}'e eklendi.`);
         onClose();
         return;
       }
@@ -123,7 +135,7 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
       });
 
       const label = mode === 'transfer' ? 'aktarıldı' : 'birleştirildi';
-      toast.success(`Masa ${sourceTable.number} → Masa ${target.number} ${label}.`);
+      toast.success(`${getTableDisplayName(sourceTable)} → ${getTableDisplayName(target)} ${label}.`);
       onClose();
     } catch {
       toast.error('İşlem başarısız. Tekrar deneyin.');
@@ -142,7 +154,7 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative bg-white w-full max-w-sm rounded-t-3xl sm:rounded-2xl shadow-2xl p-5 animate-slide-in">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold text-gray-900">Masa {sourceTable.number}</h3>
+          <h3 className="font-bold text-gray-900">{getTableDisplayName(sourceTable)}</h3>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
             <X className="w-5 h-5 text-gray-500" />
           </button>
@@ -171,7 +183,9 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
         </label>
         {candidates.length === 0 ? (
           <p className="text-sm text-red-500 mb-4">
-            {mode === 'merge' ? 'Uygun dolu masa yok.' : 'Uygun boş masa yok.'}
+            {mode === 'merge' 
+              ? `${sourceSection === 'family' ? 'Aile bölümünde' : 'Normal masalarda'} uygun dolu masa yok.` 
+              : `${sourceSection === 'family' ? 'Aile bölümünde' : 'Normal masalarda'} uygun boş masa yok.`}
           </p>
         ) : (
           <select
@@ -182,7 +196,7 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
             <option value="">Masa seçin…</option>
             {candidates.map((t) => (
               <option key={t.id} value={t.id}>
-                Masa {t.number} — {statusLabel(t)}
+                {getTableDisplayName(t)} — {statusLabel(t)}
               </option>
             ))}
           </select>
