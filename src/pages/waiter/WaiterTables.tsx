@@ -21,6 +21,7 @@ export default function WaiterTables() {
   const [qrTable, setQrTable] = useState<Table | null>(null);
   const [orderTable, setOrderTable] = useState<Table | null>(null);
   const [transferTable, setTransferTable] = useState<Table | null>(null);
+  const [activeTab, setActiveTab] = useState<'normal' | 'family'>('normal');
   const baseUrl = window.location.origin;
   const [unpaidWarning, setUnpaidWarning] = useState<{
     tableId: string; tableNumber: number; total: number;
@@ -111,6 +112,18 @@ export default function WaiterTables() {
     (t) => t.status === 'needs_cleaning' || t.status === 'being_cleaned'
   );
 
+  // Filter tables by active tab
+  const filteredTables = tables.filter((t) => 
+    activeTab === 'family' ? t.section === 'family' : (!t.section || t.section === 'normal')
+  );
+  
+  const filteredNeedsCleaning = needsCleaning.filter((t) => 
+    activeTab === 'family' ? t.section === 'family' : (!t.section || t.section === 'normal')
+  );
+
+  const normalTablesCount = tables.filter((t) => !t.section || t.section === 'normal').length;
+  const familyTablesCount = tables.filter((t) => t.section === 'family').length;
+
   return (
     <div className="p-4 sm:p-6">
       <h2 className="flex items-center gap-2 font-bold text-gray-800 mb-4">
@@ -118,15 +131,39 @@ export default function WaiterTables() {
         Masa Durumu
       </h2>
 
+      {/* Tab Navigation */}
+      <div className="flex gap-2 mb-6 border-b border-gray-200">
+        <button
+          onClick={() => setActiveTab('normal')}
+          className={`px-4 py-2 font-semibold text-sm transition-all border-b-2 ${
+            activeTab === 'normal'
+              ? 'border-brand-600 text-brand-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          🍽️ Masalar ({normalTablesCount})
+        </button>
+        <button
+          onClick={() => setActiveTab('family')}
+          className={`px-4 py-2 font-semibold text-sm transition-all border-b-2 ${
+            activeTab === 'family'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          👨‍👩‍👧‍👦 Aile Bölümü ({familyTablesCount})
+        </button>
+      </div>
+
       {/* Tables needing cleaning — highlighted */}
-      {needsCleaning.length > 0 && (
+      {filteredNeedsCleaning.length > 0 && (
         <div className="mb-6">
           <h3 className="text-sm font-semibold text-orange-700 flex items-center gap-1.5 mb-2">
             <Sparkles className="w-4 h-4" />
             Temizlenmesi Gereken Masalar
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {needsCleaning.map((table) => (
+            {filteredNeedsCleaning.map((table) => (
               <div key={table.id} className="card border-2 border-orange-300 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-gray-900">{getTableDisplayName(table)}</span>
@@ -168,7 +205,7 @@ export default function WaiterTables() {
 
       {/* All tables grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        {tables.map((table) => {
+        {filteredTables.map((table) => {
           const isBeingCleaned = table.status === 'being_cleaned';
           return (
             <div
@@ -219,6 +256,14 @@ export default function WaiterTables() {
           );
         })}
       </div>
+
+      {filteredTables.length === 0 && tables.length > 0 && (
+        <div className="text-center py-16 text-gray-400">
+          <LayoutGrid className="w-12 h-12 mx-auto mb-3 opacity-30" />
+          <p className="text-lg font-semibold">Bu bölümde masa yok</p>
+          <p className="text-sm mt-1">Admin panelinden masa eklenebilir.</p>
+        </div>
+      )}
 
       {tables.length === 0 && (
         <div className="text-center py-16 text-gray-400">
