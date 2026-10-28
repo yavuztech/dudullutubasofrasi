@@ -92,6 +92,11 @@ service cloud.firestore {
       allow write: if isAdmin();   // sadece admin değiştirebilir (gel-al, printer-config vb.)
     }
 
+    // ── Fiş numarası sayacı ───────────────────────────────────────────────
+    match /counters/{counterId} {
+      allow read, write: if counterId == 'receipt-sequence' && isAdmin();
+    }
+
     // ── Personel ──────────────────────────────────────────────────────────
     match /staff/{uid} {
       // Sadece kendi kaydını veya admin görebilir

@@ -272,7 +272,8 @@ Yeni `pending` siparişlerde Fırın (`station1`), Izgara (`station2`) ve Burger
 - Yazıcı model ve sürücülerindeki ESC/POS karakter tabloları farklı olabildiğinden, bozuk karakterleri önlemek için Türkçe harfler ASCII karşılıklarıyla yazdırılır (`Ş` → `S`, `ı` → `i`); `₺` yerine `TL` kullanılır. Her fiş başlangıçta yazıcıyı ve satır aralığını sıfırlar; bitişte kağıdı kesip yazıcı durumunu yeniden sıfırlar.
 - Yazıcılar macOS'a eklenmiş bir CUPS kuyruğu olarak görünmelidir
 - Siparişler **pending** durumundayken yazdırılır
-- Her sipariş **bir kez** yazdırılır (duplicate kontrol yok - Firestore snapshot'ları yönetir)
+- Yeni sipariş otomatik olarak bir kez yazdırılır; tekrar çıktı yalnızca garsonun açıkça oluşturduğu istekle alınır
+- Garson, mevcut sipariş detayından **Mutfağa Tekrar Gönder** ile aynı siparişin fişini yeniden yazdırma isteği oluşturabilir. Bu işlem yeni sipariş veya hesap oluşturmaz; her istasyon bridge'i kendi yazdırma sonucunu Firestore'a kaydeder. Bridge çevrimdışıysa istek Firestore'da bekler ve bridge bağlandığında işlenir. Yazıcının fiziksel olarak kağıt çıkardığı bridge tarafından garanti edilemez; gerekirse garson teyidiyle tekrar istek oluşturun.
 
 ## 🔐 Güvenlik
 

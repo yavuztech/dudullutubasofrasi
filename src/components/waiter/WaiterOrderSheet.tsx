@@ -32,7 +32,7 @@ function toDate(v: unknown): Date {
 
 export default function WaiterOrderSheet({ table, onClose }: Props) {
   const { products, categories } = useProductStore();
-  const { createOrder, updateOrderItems } = useOrderStore();
+  const { createOrder, updateOrderItems, requestKitchenPrint } = useOrderStore();
   const { updateTableStatus } = useTableStore();
 
   const [tab, setTab] = useState<Tab>('new');
@@ -40,6 +40,8 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
   const [activeCategory, setActiveCategory] = useState<string>(categories[0]?.id ?? '');
   const [loading, setLoading] = useState(false);
   const [confirmSend, setConfirmSend] = useState(false);
+  const [reprintConfirmOrder, setReprintConfirmOrder] = useState<Order | null>(null);
+  const [reprintLoading, setReprintLoading] = useState(false);
 
   // Existing orders for this table/session
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
@@ -146,6 +148,21 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
       toast.error('İşlem başarısız.');
     } finally {
       setEditLoading(false);
+    }
+  };
+
+  const handleRequestKitchenPrint = async () => {
+    if (!reprintConfirmOrder) return;
+    setReprintLoading(true);
+    try {
+      await requestKitchenPrint(reprintConfirmOrder.id);
+      toast.success('Tekrar yazdırma isteği kaydedildi. Bridge çevrimdışıysa bağlandığında yazdıracak.');
+      setReprintConfirmOrder(null);
+    } catch (error) {
+      console.error('Mutfak fişi tekrar yazdırma isteği kaydedilemedi:', error);
+      toast.error('Tekrar yazdırma isteği kaydedilemedi. Ağ bağlantısını kontrol edip yeniden deneyin.');
+    } finally {
+      setReprintLoading(false);
     }
   };
 
@@ -338,14 +355,22 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
                       ))}
                       <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200">
                         <span className="font-bold text-gray-900 text-sm">{formatCurrency(order.totalAmount)}</span>
-                        {canEdit && (
+                        <div className="flex items-center gap-2">
                           <button
-                            onClick={() => openEdit(order)}
-                            className="text-xs font-semibold text-orange-600 bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg transition-colors"
+                            onClick={() => setReprintConfirmOrder(order)}
+                            className="text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"
                           >
-                            Düzenle
+                            Mutfağa Tekrar Gönder
                           </button>
-                        )}
+                          {canEdit && (
+                            <button
+                              onClick={() => openEdit(order)}
+                              className="text-xs font-semibold text-orange-600 bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                              Düzenle
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </>
                   )}
@@ -385,6 +410,38 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
                 className="btn-primary flex-1 disabled:opacity-50"
               >
                 {loading ? 'Gönderiliyor…' : 'Evet, mutfağa gönder'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reprintConfirmOrder && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => !reprintLoading && setReprintConfirmOrder(null)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="font-bold text-gray-900 text-lg">Sipariş fişi yeniden gönderilsin mi?</h3>
+            <p className="text-sm text-gray-600 mt-2">
+              <strong>{getTableDisplayName(table)}</strong> için bu siparişin mutfak fişi tekrar yazdırılmak üzere istasyonlara gönderilecek.
+              Yeni sipariş veya ek hesap oluşturulmaz. Yazıcı çevrimdışıysa istek bridge bağlandığında işlenir.
+            </p>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => setReprintConfirmOrder(null)}
+                disabled={reprintLoading}
+                className="btn-secondary flex-1"
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={() => void handleRequestKitchenPrint()}
+                disabled={reprintLoading}
+                className="btn-primary flex-1 disabled:opacity-50"
+              >
+                {reprintLoading ? 'İstek gönderiliyor…' : 'Evet, tekrar gönder'}
               </button>
             </div>
           </div>

@@ -9,7 +9,7 @@ const {
   formatKitchenReceipt,
   isValidCashierReceipt,
 } = require('./receiptFormatter');
-const { groupItemsByStation } = require('./kitchenRouting');
+const { groupItemsByStation, getUnacknowledgedStations } = require('./kitchenRouting');
 const { reserveReceiptNumbers } = require('./receiptNumber');
 const { readBridgeConfig, handlesStation, getPrinterName } = require('./bridgeConfig');
 const bridgeConfig = readBridgeConfig();
@@ -97,6 +97,7 @@ let printerSettings = null;
 let categories = [];
 let isInitialOrdersSnapshot = true;
 const printerQueues = new Map();
+const kitchenPrintRequestsInProgress = new Set();
 
 async function startFirestoreListener() {
   const [settingsSnapshot, categoriesSnapshot] = await Promise.all([
@@ -110,13 +111,33 @@ async function startFirestoreListener() {
   db.doc('settings/printer-config').onSnapshot((snap) => {
     printerSettings = snap.exists ? snap.data() : null;
     console.log('✓ Yazıcı ayarları güncellendi:', printerSettings);
+    retryUnacknowledgedKitchenPrints().catch((err) => {
+      console.error('Bekleyen mutfak tekrar yazdırma istekleri işlenemedi:', err);
+    });
   });
 
   // Listen to categories
   db.collection('categories').onSnapshot((snap) => {
     categories = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     console.log(`✓ ${categories.length} kategori yüklendi`);
+    retryUnacknowledgedKitchenPrints().catch((err) => {
+      console.error('Bekleyen mutfak tekrar yazdırma istekleri işlenemedi:', err);
+    });
   });
+
+  // Retry requests are durable, so process unacknowledged requests on startup too.
+  db.collection('orders')
+    .where('kitchenPrintRequestId', '!=', null)
+    .onSnapshot((snap) => {
+      snap.docChanges().forEach((change) => {
+        const order = { id: change.doc.id, ...change.doc.data() };
+        handleKitchenPrintRequest(order).catch((err) => {
+          console.error(`Mutfak tekrar yazdırma isteği işlenemedi (${order.id}):`, err);
+        });
+      });
+    }, (err) => {
+      console.error('Mutfak tekrar yazdırma istekleri dinlenemedi:', err);
+    });
 
   // Listen to new orders
   db.collection('orders')
@@ -137,6 +158,66 @@ async function startFirestoreListener() {
         }
       });
     });
+}
+
+async function retryUnacknowledgedKitchenPrints() {
+  const snapshot = await db.collection('orders')
+    .where('kitchenPrintRequestId', '!=', null)
+    .get();
+  await Promise.all(snapshot.docs.map((orderDoc) =>
+    handleKitchenPrintRequest({ id: orderDoc.id, ...orderDoc.data() })
+  ));
+}
+
+async function handleKitchenPrintRequest(order) {
+  const requestId = order.kitchenPrintRequestId;
+  if (typeof requestId !== 'string' || requestId.length === 0) return;
+
+  const stations = bridgeConfig.station
+    ? [bridgeConfig.station]
+    : ['station1', 'station2', 'station4'];
+  const unhandledStations = getUnacknowledgedStations(order, stations);
+  if (unhandledStations.length === 0) return;
+
+  const requestKey = `${order.id}:${requestId}`;
+  if (kitchenPrintRequestsInProgress.has(requestKey)) return;
+  kitchenPrintRequestsInProgress.add(requestKey);
+
+  try {
+    if (!printerSettings || !printerSettings.enabled) {
+      throw new Error('Otomatik yazdırma kapalı veya yazıcı ayarları yüklenemedi.');
+    }
+
+    const grouped = groupItemsByStation(order.items, categories);
+    const handledFields = {};
+
+    for (const station of unhandledStations) {
+      const stationItems = grouped[station] ?? [];
+      if (stationItems.length === 0) {
+        handledFields[`kitchenPrintHandled.${station}`] = requestId;
+        continue;
+      }
+
+      const printerName = getPrinterName(bridgeConfig, printerSettings, station);
+      if (!printerName) {
+        throw new Error(`${station} için yerel yazıcı tanımlanmamış.`);
+      }
+
+      const receiptNumbers = await reserveReceiptNumbers(db, stationItems.length);
+      const printData = Buffer.concat(stationItems.map(({ item }, index) =>
+        formatKitchenReceipt({ order, item, station, receiptNumber: receiptNumbers[index] })
+      ));
+      await printReceipt(printerName, printData);
+      handledFields[`kitchenPrintHandled.${station}`] = requestId;
+    }
+
+    if (Object.keys(handledFields).length > 0) {
+      await db.collection('orders').doc(order.id).update(handledFields);
+      console.log(`✓ Mutfak tekrar yazdırma isteği işlendi: ${order.id} (${unhandledStations.join(', ')})`);
+    }
+  } finally {
+    kitchenPrintRequestsInProgress.delete(requestKey);
+  }
 }
 
 // ─── Order Handler ───────────────────────────────────────────────────────────

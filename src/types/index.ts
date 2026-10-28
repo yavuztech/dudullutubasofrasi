@@ -110,6 +110,8 @@ export interface Order {
   tableNumber?: number;
   items: OrderItem[];
   status: OrderStatus;
+  kitchenPrintRequestId?: string;
+  kitchenPrintHandled?: Record<string, string>;
   paymentStatus?: 'paid' | 'credit';
   debtId?: string;
   // Takeaway customer info

@@ -12,6 +12,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { nanoid } from '../utils/nanoid';
 import type { Order, OrderStatus, OrderItem } from '../types';
 
 function toDate(v: unknown): Date {
@@ -38,6 +39,7 @@ interface OrderStore {
   ) => Promise<string>;
   updateOrderStatus: (id: string, status: OrderStatus) => Promise<void>;
   updateOrderItems: (id: string, items: OrderItem[]) => Promise<void>;
+  requestKitchenPrint: (id: string) => Promise<void>;
   addItemsToOrder: (id: string, items: OrderItem[]) => Promise<void>;
 }
 
@@ -91,6 +93,13 @@ export const useOrderStore = create<OrderStore>((set) => ({
     const update: Record<string, unknown> = { items, totalAmount, updatedAt: serverTimestamp() };
     if (items.length === 0) update.status = 'cancelled';
     await updateDoc(doc(db, 'orders', id), update);
+  },
+
+  requestKitchenPrint: async (id) => {
+    await updateDoc(doc(db, 'orders', id), {
+      kitchenPrintRequestId: nanoid(12),
+      updatedAt: serverTimestamp(),
+    });
   },
 
   addItemsToOrder: async (id, newItems) => {

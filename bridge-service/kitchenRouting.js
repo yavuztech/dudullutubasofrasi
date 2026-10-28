@@ -14,4 +14,11 @@ function groupItemsByStation(items, categories = []) {
   return grouped;
 }
 
-module.exports = { groupItemsByStation };
+function getUnacknowledgedStations(order, stations) {
+  const requestId = order?.kitchenPrintRequestId;
+  if (typeof requestId !== 'string' || requestId.length === 0) return [];
+
+  return stations.filter((station) => order.kitchenPrintHandled?.[station] !== requestId);
+}
+
+module.exports = { groupItemsByStation, getUnacknowledgedStations };

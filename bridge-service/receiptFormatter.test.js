@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { formatCashierReceipt, formatKitchenReceipt, isValidCashierReceipt } = require('./receiptFormatter');
-const { groupItemsByStation } = require('./kitchenRouting');
+const { groupItemsByStation, getUnacknowledgedStations } = require('./kitchenRouting');
 const { reserveReceiptNumbers } = require('./receiptNumber');
 
 test('formats a cashier order receipt with Turkish text and aligned totals', () => {
@@ -131,8 +131,24 @@ test('does not throw when order categories are unavailable', () => {
   assert.deepEqual(groupItemsByStation(null, []), {});
 });
 
+test('tracks kitchen reprint acknowledgements independently for each station', () => {
+  const order = {
+    kitchenPrintRequestId: 'request-2',
+    kitchenPrintHandled: {
+      station1: 'request-2',
+      station2: 'request-1',
+    },
+  };
+
+  assert.deepEqual(
+    getUnacknowledgedStations(order, ['station1', 'station2', 'station4']),
+    ['station2', 'station4'],
+  );
+  assert.deepEqual(getUnacknowledgedStations({ kitchenPrintRequestId: '' }, ['station1']), []);
+});
+
 test('reserves receipt numbers globally starting at 00001', async () => {
-  const state = { lastNumber: undefined };
+  const state = { lastNumber: undefined, resetBy: 'admin-uid', resetAt: 'reset-time' };
   const db = {
     collection: () => ({
       doc: () => ({ id: 'receipt-sequence' }),
@@ -142,10 +158,12 @@ test('reserves receipt numbers globally starting at 00001', async () => {
         exists: Number.isInteger(state.lastNumber),
         get: () => state.lastNumber,
       }),
-      set: (_ref, value) => { state.lastNumber = value.lastNumber; },
+      set: (_ref, value) => Object.assign(state, value),
     }),
   };
 
   assert.deepEqual(await reserveReceiptNumbers(db, 3), ['00001', '00002', '00003']);
   assert.deepEqual(await reserveReceiptNumbers(db, 1), ['00004']);
+  assert.equal(state.resetBy, 'admin-uid');
+  assert.equal(state.resetAt, 'reset-time');
 });

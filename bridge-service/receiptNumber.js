@@ -12,7 +12,7 @@ async function reserveReceiptNumbers(db, count) {
     }
 
     const firstNumber = lastNumber + 1;
-    transaction.set(counterRef, { lastNumber: lastNumber + count });
+    transaction.set(counterRef, { lastNumber: lastNumber + count }, { merge: true });
     return Array.from({ length: count }, (_, index) =>
       String(firstNumber + index).padStart(5, '0'));
   });
