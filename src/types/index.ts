@@ -61,7 +61,7 @@ export interface Category {
   name: string;
   sortOrder: number;
   department?: ProductDepartment; // undefined = 'food'
-  kitchenStation?: string;        // 'station1' | 'station2' | 'station3' | undefined
+  kitchenStation?: string;        // 'station1' Fırın | 'station2' Izgara | 'station3' Kasa | 'station4' Burger
 }
 
 // ─── Clothing Sale ──────────────────────────
@@ -95,6 +95,7 @@ export type OrderStatus =
 
 export interface OrderItem {
   productId: string;
+  categoryId?: string;
   productName: string;
   quantity: number;
   unitPrice: number;
@@ -103,11 +104,14 @@ export interface OrderItem {
 
 export interface Order {
   id: string;
+  orderNumber?: string;
   type: OrderType;
   tableId?: string;
   tableNumber?: number;
   items: OrderItem[];
   status: OrderStatus;
+  paymentStatus?: 'paid' | 'credit';
+  debtId?: string;
   // Takeaway customer info
   customerName?: string;
   customerPhone?: string;
@@ -118,6 +122,20 @@ export interface Order {
   notes?: string;
   sessionId?: string; // table session when order was placed
   totalAmount: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CashDebt {
+  id: string;
+  customerName: string;
+  tableId: string;
+  tableLabel: string;
+  orderIds: string[];
+  items: OrderItem[];
+  totalAmount: number;
+  paidAmount: number;
+  status: 'open' | 'paid';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -152,8 +170,9 @@ export interface GelAlSettings {
 // ─── Printer Settings (Firestore: settings/printer-config) ───
 export interface PrinterSettings {
   enabled: boolean;                         // Otomatik yazdırma aktif mi
-  stationMapping: Record<string, string>;   // { station1: "EPSON TM-T88V", station2: "Star TSP100" }
+  stationMapping?: Record<string, string>;  // Legacy single-bridge mapping
   bridgeUrl?: string;                       // Bridge service URL (varsayılan: http://localhost:3001)
+  bridgeUrls?: Record<string, string>;      // Bridge URL per station
 }
 
 // ─── Cart (client-side only) ─────────────────

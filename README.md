@@ -16,11 +16,19 @@ Restoranlar ve kafeler için modern, gerçek zamanlı sipariş yönetim sistemi.
 - Bekleyen siparişleri görmek
 - Sipariş durumunu güncellemek
 - Ürün yönetimi
+- Fırın, ızgara ve kasa istasyonlarına otomatik termal fiş yönlendirme ([Bridge Service](bridge-service/README.md))
 
 ### 👔 Garson Paneli
 - Masa yönetimi
 - Masa bildirimlerini görüntüleme
 - Gerçek zamanlı sip. takibi
+
+### 💳 Kasa Paneli
+- Hesapları müşteri adına açık/veresiye olarak kapatma
+- Kısmi veya tam tahsilat kaydı ve kalan borç takibi
+- Masa hesabını kapatıp masayı temizlemeye alma; müşteri adıyla borç kaydı tutma
+
+Kasa > **Masalar** bölümünde hesabı açıp **Açık Hesap** seçin ve müşteri adını girin. Borç kaydedilince masa kapanır ve temizlemeye alınır. Daha sonraki ödemeler Kasa > **Açık Hesaplar** bölümünden müşteri adına bulunup kısmi veya tam tahsilat olarak kaydedilebilir. Vade tarihi alınmaz.
 
 ### 🔐 Admin Paneli
 - Siparişler (tüm siparişleri yönet)

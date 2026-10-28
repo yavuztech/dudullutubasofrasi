@@ -110,6 +110,17 @@ service cloud.firestore {
       allow create: if hasAnyRole(['clothing', 'admin']);
       allow update: if isAdmin();
       allow delete: if isAdmin();
-    }  }
-}
+    }
 
+    // ── Kasa veresiye hesapları ────────────────────────────────────────────
+    match /cashDebts/{debtId} {
+      allow read, create, update: if hasAnyRole(['cashier', 'admin']);
+      allow delete: if isAdmin();
+
+      match /payments/{paymentId} {
+        allow read, create: if hasAnyRole(['cashier', 'admin']);
+        allow update, delete: if isAdmin();
+      }
+    }
+  }
+}

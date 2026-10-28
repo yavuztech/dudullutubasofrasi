@@ -185,12 +185,16 @@ export default function CustomerMenu() {
         tableId: table.id,
         tableNumber: table.number,
         ...(table.sessionId ? { sessionId: table.sessionId } : {}),
-        items: cart.map((i) => ({
-          productId: i.productId,
-          productName: i.productName,
-          quantity: i.quantity,
-          unitPrice: i.unitPrice,
-        })),
+        items: cart.map((i) => {
+          const product = products.find((candidate) => candidate.id === i.productId);
+          return {
+            productId: i.productId,
+            ...(product ? { categoryId: product.category } : {}),
+            productName: i.productName,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+          };
+        }),
         status: 'pending',
         totalAmount,
         ...(fcmToken ? { customerPushToken: fcmToken } : {}),

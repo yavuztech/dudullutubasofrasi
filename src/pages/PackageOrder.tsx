@@ -216,12 +216,16 @@ export default function PackageOrder() {
     setCheckoutLoading(true);
     try {
       const totalAmount = cart.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
-      const orderItems = cart.map((i) => ({
-        productId: i.productId,
-        productName: i.productName,
-        quantity: i.quantity,
-        unitPrice: i.unitPrice,
-      }));
+      const orderItems = cart.map((i) => {
+        const product = products.find((candidate) => candidate.id === i.productId);
+        return {
+          productId: i.productId,
+          ...(product ? { categoryId: product.category } : {}),
+          productName: i.productName,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+        };
+      });
       const orderId = await createOrder({
         type: 'takeaway',
         items: orderItems,

@@ -92,7 +92,12 @@ export const useProductStore = create<ProductStore>((set) => ({
   },
 
   addCategory: async (name, sortOrder, department = 'food', kitchenStation) => {
-    const ref = await addDoc(collection(db, 'categories'), { name, sortOrder, department, kitchenStation });
+    const ref = await addDoc(collection(db, 'categories'), {
+      name,
+      sortOrder,
+      department,
+      ...(kitchenStation ? { kitchenStation } : {}),
+    });
     return ref.id;
   },
 

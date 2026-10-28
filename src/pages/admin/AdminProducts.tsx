@@ -8,9 +8,10 @@ import type { Product, Category } from '../../types';
 
 const KITCHEN_STATIONS = [
   { value: undefined, label: 'Yok' },
-  { value: 'station1', label: 'İstasyon 1' },
-  { value: 'station2', label: 'İstasyon 2' },
-  { value: 'station3', label: 'İstasyon 3' },
+  { value: 'station1', label: 'Fırın' },
+  { value: 'station2', label: 'Izgara' },
+  { value: 'station3', label: 'Kasa (manuel fiş)' },
+  { value: 'station4', label: 'Burger' },
 ] as const;
 
 export default function AdminProducts() {
@@ -256,7 +257,7 @@ function CategoryFormModal({ category, onSave, onClose }: CategoryFormProps) {
               ))}
             </select>
             <p className="text-xs text-gray-500 mt-1">
-              Bu kategorideki ürünler, seçilen istasyonun yazıcısına otomatik gönderilir.
+              İstasyonu olmayan kategoriler otomatik basılmaz. Fırın, Izgara ve Burger ürünleri seçilen mutfak yazıcısına; Kasa seçimi yalnızca kasiyer ekranındaki manuel fişe yönlendirir.
             </p>
           </div>
           <button type="submit" className="btn-primary mt-2">

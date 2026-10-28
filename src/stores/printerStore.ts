@@ -9,13 +9,17 @@ const DEFAULTS: PrinterSettings = {
   bridgeUrl: 'http://localhost:3001',
 };
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item: unknown) => typeof item === 'string');
+}
+
 interface PrinterState {
   settings: PrinterSettings;
   loading: boolean;
   availablePrinters: string[];
   subscribe: () => () => void;
   update: (patch: Partial<PrinterSettings>) => Promise<void>;
-  fetchAvailablePrinters: () => Promise<void>;
+  fetchAvailablePrinters: (bridgeUrl?: string) => Promise<string[]>;
 }
 
 export const usePrinterStore = create<PrinterState>((set, get) => ({
@@ -40,13 +44,17 @@ export const usePrinterStore = create<PrinterState>((set, get) => ({
     await setDoc(ref, patch, { merge: true });
   },
 
-  fetchAvailablePrinters: async () => {
+  fetchAvailablePrinters: async (targetBridgeUrl) => {
     try {
-      const bridgeUrl = get().settings.bridgeUrl || 'http://localhost:3001';
+      const bridgeUrl = targetBridgeUrl || get().settings.bridgeUrl || 'http://localhost:3001';
       const res = await fetch(`${bridgeUrl}/printers`);
       if (!res.ok) throw new Error('Bridge service ulaşılamıyor');
-      const data = await res.json();
-      set({ availablePrinters: data.printers || [] });
+      const data: { printers?: unknown } = await res.json();
+      if (!isStringArray(data.printers)) {
+        throw new Error('Bridge servisten geçersiz yazıcı listesi alındı');
+      }
+      set({ availablePrinters: data.printers });
+      return data.printers;
     } catch (err) {
       console.error('Yazıcı listesi alınamadı:', err);
       set({ availablePrinters: [] });

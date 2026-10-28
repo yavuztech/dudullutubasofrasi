@@ -39,6 +39,7 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>(categories[0]?.id ?? '');
   const [loading, setLoading] = useState(false);
+  const [confirmSend, setConfirmSend] = useState(false);
 
   // Existing orders for this table/session
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
@@ -101,7 +102,16 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
         tableId: table.id,
         tableNumber: table.number,
         ...(table.sessionId ? { sessionId: table.sessionId } : {}),
-        items: cart.map((i) => ({ productId: i.productId, productName: i.productName, quantity: i.quantity, unitPrice: i.unitPrice })),
+        items: cart.map((i) => {
+          const product = products.find((candidate) => candidate.id === i.productId);
+          return {
+            productId: i.productId,
+            ...(product ? { categoryId: product.category } : {}),
+            productName: i.productName,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+          };
+        }),
         status: 'pending',
         totalAmount: cartTotal,
       });
@@ -248,7 +258,7 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
                       <p className="font-bold text-gray-900">{formatCurrency(cartTotal)}</p>
                     </div>
                   </div>
-                  <button onClick={handleSend} disabled={loading} className="btn-primary flex items-center gap-2 px-5 py-2.5 flex-shrink-0 disabled:opacity-60">
+                  <button onClick={() => setConfirmSend(true)} disabled={loading} className="btn-primary flex items-center gap-2 px-5 py-2.5 flex-shrink-0 disabled:opacity-60">
                     <Send className="w-4 h-4" />
                     {loading ? 'Gönderiliyor…' : 'Mutfağa Gönder'}
                   </button>
@@ -346,6 +356,40 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
         )}
 
       </div>
+
+      {confirmSend && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => !loading && setConfirmSend(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="font-bold text-gray-900 text-lg">Siparişi mutfağa göndermek istiyor musunuz?</h3>
+            <p className="text-sm text-gray-600 mt-2">
+              <strong>{getTableDisplayName(table)}</strong> için {cartCount} ürün, toplam {formatCurrency(cartTotal)} tutarında sipariş mutfağa gönderilecek.
+            </p>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => setConfirmSend(false)}
+                disabled={loading}
+                className="btn-secondary flex-1"
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmSend(false);
+                  void handleSend();
+                }}
+                disabled={loading}
+                className="btn-primary flex-1 disabled:opacity-50"
+              >
+                {loading ? 'Gönderiliyor…' : 'Evet, mutfağa gönder'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

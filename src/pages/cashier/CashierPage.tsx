@@ -6,6 +6,7 @@ import {
 import { db } from '../../lib/firebase';
 import { useTableStore } from '../../stores/tableStore';
 import { useProductStore } from '../../stores/productStore';
+import { useDebtStore } from '../../stores/debtStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import {
   Banknote, CreditCard, LayoutGrid, Package, X, CheckCircle,
@@ -18,7 +19,7 @@ import TableTransferModal from '../../components/shared/TableTransferModal';
 import ReceiptModal from '../../components/cashier/ReceiptModal';
 import type { Order, OrderItem, Table } from '../../types';
 
-type Tab = 'tables' | 'takeaway';
+type Tab = 'tables' | 'takeaway' | 'debts';
 
 const STATUS_LABEL: Record<string, string> = {
   pending:   'Bekliyor',
@@ -45,6 +46,7 @@ export default function CashierPage() {
   const { tables, subscribe, newSession } = useTableStore();
   const { products, categories, subscribe: subProducts, subscribeCategories } = useProductStore();
   const { settings, subscribe: subSettings } = useSettingsStore();
+  const { debts, loading: debtsLoading, subscribe: subscribeDebts, createTableDebt, recordPayment } = useDebtStore();
 
   const [tab, setTab] = useState<Tab>('tables');
   const [activeTableOrders, setActiveTableOrders] = useState<Order[]>([]);
@@ -53,6 +55,12 @@ export default function CashierPage() {
   const [closingId, setClosingId] = useState<string | null>(null);
   const [transferBill, setTransferBill] = useState<Bill | null>(null);
   const [cancelBillConfirm, setCancelBillConfirm] = useState<Bill | null>(null);
+  const [confirmCloseBill, setConfirmCloseBill] = useState(false);
+  const [creditBill, setCreditBill] = useState<Bill | null>(null);
+  const [creditCustomerName, setCreditCustomerName] = useState('');
+  const [debtSearch, setDebtSearch] = useState('');
+  const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>({});
+  const [payingDebtId, setPayingDebtId] = useState<string | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null); // takeaway fiş
 
@@ -84,7 +92,8 @@ export default function CashierPage() {
     const u2 = subProducts();
     const u3 = subscribeCategories();
     const u4 = subSettings();
-    return () => { u1(); u2(); u3(); u4(); };
+    const u5 = subscribeDebts();
+    return () => { u1(); u2(); u3(); u4(); u5(); };
   }, []);
 
   useEffect(() => {
@@ -255,7 +264,11 @@ export default function CashierPage() {
     if (!selectedBill || selectedBill.orders.length === 0) return;
     setClosingId(selectedBill.key);
     try {
-      await Promise.all(selectedBill.orders.map((o) => updateDoc(doc(db, 'orders', o.id), { status: 'paid', updatedAt: serverTimestamp() })));
+      await Promise.all(selectedBill.orders.map((o) => updateDoc(doc(db, 'orders', o.id), {
+        status: 'paid',
+        paymentStatus: 'paid',
+        updatedAt: serverTimestamp(),
+      })));
       await newSession(selectedBill.table.id);
       await updateDoc(doc(db, 'tables', selectedBill.table.id), {
         status: 'needs_cleaning',
@@ -278,6 +291,65 @@ export default function CashierPage() {
       setSelectedBill(null);
     } catch { toast.error('Hesap kapatılamadı.'); }
     finally { setClosingId(null); }
+  };
+
+  const createCreditAccount = async () => {
+    if (!creditBill || creditBill.orders.length === 0) return;
+    const customerName = creditCustomerName.trim();
+    if (!customerName) {
+      toast.error('Borç kaydı için müşteri adını girin.');
+      return;
+    }
+
+    setClosingId(creditBill.key);
+    try {
+      await createTableDebt({
+        customerName,
+        tableId: creditBill.table.id,
+        tableLabel: tableLabel(creditBill.table),
+        orderIds: creditBill.orders.map((order) => order.id),
+        items: creditBill.orders.flatMap((order) => order.items),
+        totalAmount: finalTotal,
+        mergedTableIds: creditBill.table.mergedTableIds ?? [],
+      });
+      toast.success(`${formatCurrency(finalTotal)} tutarındaki borç ${customerName} adına kaydedildi.`);
+      setCreditBill(null);
+      setCreditCustomerName('');
+      setSelectedBill(null);
+    } catch (error) {
+      console.error('Veresiye hesabı kaydedilemedi:', error);
+      toast.error(error instanceof Error ? error.message : 'Veresiye hesabı kaydedilemedi.');
+    } finally {
+      setClosingId(null);
+    }
+  };
+
+  const submitDebtPayment = async (debtId: string, remainingAmount: number) => {
+    const amount = Number(paymentAmounts[debtId] ?? remainingAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Tahsilat tutarı sıfırdan büyük olmalıdır.');
+      return;
+    }
+    if (amount > remainingAmount) {
+      toast.error('Tahsilat kalan borç tutarından fazla olamaz.');
+      return;
+    }
+
+    setPayingDebtId(debtId);
+    try {
+      await recordPayment(debtId, amount);
+      setPaymentAmounts((previous) => {
+        const next = { ...previous };
+        delete next[debtId];
+        return next;
+      });
+      toast.success('Tahsilat kaydedildi.');
+    } catch (error) {
+      console.error('Veresiye tahsilatı kaydedilemedi:', error);
+      toast.error(error instanceof Error ? error.message : 'Tahsilat kaydedilemedi.');
+    } finally {
+      setPayingDebtId(null);
+    }
   };
 
   const cancelTableBill = async () => {
@@ -336,7 +408,11 @@ export default function CashierPage() {
   const closeTakeawayBill = async (orderId: string, finalAmount?: number) => {
     setClosingId(orderId);
     try {
-      const update: Record<string, unknown> = { status: 'paid', updatedAt: serverTimestamp() };
+      const update: Record<string, unknown> = {
+        status: 'paid',
+        paymentStatus: 'paid',
+        updatedAt: serverTimestamp(),
+      };
       if (finalAmount !== undefined) update.totalAmount = finalAmount;
       await updateDoc(doc(db, 'orders', orderId), update);
       toast.success('Ödeme alındı!');
@@ -362,6 +438,12 @@ export default function CashierPage() {
   // Section bazlı gruplama
   const normalBills = bills.filter((b) => !b.table.section || b.table.section === 'normal');
   const familyBills = bills.filter((b) => b.table.section === 'family');
+  const filteredDebts = debts.filter((debt) => {
+    const search = debtSearch.trim().toLocaleLowerCase('tr-TR');
+    return !search
+      || debt.customerName.toLocaleLowerCase('tr-TR').includes(search)
+      || debt.tableLabel.toLocaleLowerCase('tr-TR').includes(search);
+  });
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -375,6 +457,14 @@ export default function CashierPage() {
         <button onClick={() => setTab('takeaway')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'takeaway' ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
           <Package className="w-4 h-4" />Gel Al
           {takeawayOrders.length > 0 && <span className={`text-xs rounded-full px-1.5 ${tab === 'takeaway' ? 'bg-white/25 text-white' : 'bg-brand-100 text-brand-700'}`}>{takeawayOrders.length}</span>}
+        </button>
+        <button onClick={() => setTab('debts')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'debts' ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+          <Banknote className="w-4 h-4" />Açık Hesap
+          {debts.filter((debt) => debt.status === 'open').length > 0 && (
+            <span className={`text-xs rounded-full px-1.5 ${tab === 'debts' ? 'bg-white/25 text-white' : 'bg-orange-100 text-orange-700'}`}>
+              {debts.filter((debt) => debt.status === 'open').length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -491,6 +581,7 @@ export default function CashierPage() {
                   </button>
                 </div>
               )}
+
             </div>
           )}
 
@@ -598,6 +689,100 @@ export default function CashierPage() {
             </div>
             );
           })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'debts' && (
+        <div className="flex flex-col gap-4">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Açık Hesaplar</h2>
+            <p className="text-sm text-gray-500">Açık borçları görüntüleyin ve tam ya da kısmi tahsilat kaydedin.</p>
+          </div>
+          <input
+            type="search"
+            value={debtSearch}
+            onChange={(event) => setDebtSearch(event.target.value)}
+            placeholder="Müşteri veya masa ara"
+            className="input"
+          />
+          {filteredDebts.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              <Banknote className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p className="font-semibold">
+                {debtsLoading
+                  ? 'Açık hesaplar yükleniyor…'
+                  : debts.length ? 'Aramayla eşleşen açık hesap yok' : 'Açık hesap yok'}
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {filteredDebts.map((debt) => {
+                const remainingAmount = Math.max(0, debt.totalAmount - debt.paidAmount);
+                const open = debt.status === 'open' && remainingAmount > 0;
+                return (
+                  <div key={debt.id} className="card flex flex-col gap-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="font-bold text-gray-900">{debt.customerName}</h3>
+                        <p className="text-sm text-gray-500">{debt.tableLabel} · {debt.createdAt.toLocaleString('tr-TR')}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${open ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                        {open ? 'Açık' : 'Ödendi'}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+                      <span>Toplam: <strong>{formatCurrency(debt.totalAmount)}</strong></span>
+                      <span>Tahsil edilen: <strong>{formatCurrency(debt.paidAmount)}</strong></span>
+                      <span className={open ? 'text-red-600' : 'text-green-700'}>
+                        Kalan: <strong>{formatCurrency(remainingAmount)}</strong>
+                      </span>
+                    </div>
+                    <details className="text-sm">
+                      <summary className="cursor-pointer text-gray-600 font-medium">Hesap ürünlerini göster</summary>
+                      <ul className="mt-2 list-disc list-inside text-gray-500">
+                        {debt.items.map((item, index) => (
+                          <li key={`${item.productId}-${index}`}>{item.quantity} × {item.productName}</li>
+                        ))}
+                      </ul>
+                    </details>
+                    {open && (
+                      <form
+                        className="flex flex-col sm:flex-row gap-2 border-t border-gray-100 pt-3"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void submitDebtPayment(debt.id, remainingAmount);
+                        }}
+                      >
+                        <label className="sr-only" htmlFor={`payment-${debt.id}`}>Tahsilat tutarı</label>
+                        <input
+                          id={`payment-${debt.id}`}
+                          type="number"
+                          min="0.01"
+                          max={remainingAmount}
+                          step="0.01"
+                          required
+                          value={paymentAmounts[debt.id] ?? remainingAmount.toFixed(2)}
+                          onChange={(event) => setPaymentAmounts((previous) => ({
+                            ...previous,
+                            [debt.id]: event.target.value,
+                          }))}
+                          className="input flex-1"
+                          aria-label={`${debt.customerName} tahsilat tutarı`}
+                        />
+                        <button
+                          type="submit"
+                          disabled={payingDebtId !== null}
+                          className="btn-primary py-2 px-4 disabled:opacity-50"
+                        >
+                          {payingDebtId === debt.id ? 'Kaydediliyor…' : 'Tahsilat Kaydet'}
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -749,7 +934,18 @@ export default function CashierPage() {
                     Fiş
                   </button>
                   <button
-                    onClick={closeTableBill}
+                    onClick={() => {
+                      setCreditCustomerName('');
+                      setCreditBill(selectedBill);
+                    }}
+                    disabled={!!closingId || !!editingOrder || addMode}
+                    className="flex-shrink-0 py-3.5 px-3 rounded-2xl border-2 border-orange-200 bg-orange-50 hover:bg-orange-100 flex items-center gap-1.5 text-orange-800 font-semibold disabled:opacity-50"
+                  >
+                    <Banknote className="w-5 h-5" />
+                    Açık Hesap
+                  </button>
+                  <button
+                    onClick={() => setConfirmCloseBill(true)}
                     disabled={!!closingId || !!editingOrder || addMode}
                     className="btn-primary flex-1 py-3.5 text-base flex items-center justify-center gap-2 disabled:opacity-50"
                   >
@@ -995,6 +1191,106 @@ export default function CashierPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {confirmCloseBill && selectedBill && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => !closingId && setConfirmCloseBill(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="font-bold text-gray-900 text-lg">Hesabı kapatmak istiyor musunuz?</h3>
+            <p className="text-sm text-gray-600 mt-2">
+              <strong>{tableLabel(selectedBill.table)}</strong> hesabındaki {formatCurrency(finalTotal)} tutarındaki ödeme alınmış olarak işaretlenecek ve masa temizlemeye alınacak.
+            </p>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => setConfirmCloseBill(false)}
+                disabled={!!closingId}
+                className="btn-secondary flex-1"
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmCloseBill(false);
+                  void closeTableBill();
+                }}
+                disabled={!!closingId}
+                className="btn-primary flex-1 disabled:opacity-50"
+              >
+                {closingId ? 'İşleniyor…' : 'Evet, hesabı kapat'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {creditBill && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => !closingId && setCreditBill(null)}
+          />
+          <form
+            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void createCreditAccount();
+            }}
+          >
+            <div className="flex items-start gap-3 mb-5">
+              <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Banknote className="w-5 h-5 text-orange-700" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900">Açık Hesap Oluştur</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  {tableLabel(creditBill.table)} hesabı kapatılacak ve borç olarak kaydedilecek.
+                </p>
+              </div>
+            </div>
+            <label htmlFor="credit-customer-name" className="block text-sm font-medium text-gray-700 mb-1">
+              Müşteri adı *
+            </label>
+            <input
+              id="credit-customer-name"
+              type="text"
+              required
+              autoFocus
+              maxLength={100}
+              value={creditCustomerName}
+              onChange={(event) => setCreditCustomerName(event.target.value)}
+              className="input w-full"
+              placeholder="Borç kimin adına kaydedilsin?"
+            />
+            <div className="mt-4 rounded-xl bg-orange-50 p-3 flex items-center justify-between">
+              <span className="text-sm text-orange-900">Borç tutarı</span>
+              <strong className="text-lg text-orange-900">{formatCurrency(finalTotal)}</strong>
+            </div>
+            <p className="text-xs text-gray-500 mt-3">
+              Masa kapatılıp temizlemeye alınır. Borç Açık Hesaplar bölümünde görünür; sonradan kısmi veya tam tahsilat kaydedebilirsiniz.
+            </p>
+            <div className="flex gap-3 mt-5">
+              <button
+                type="button"
+                onClick={() => setCreditBill(null)}
+                disabled={!!closingId}
+                className="btn-secondary flex-1"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="submit"
+                disabled={!!closingId}
+                className="btn-primary flex-1 disabled:opacity-50"
+              >
+                {closingId === creditBill.key ? 'Kaydediliyor…' : 'Borç Kaydet ve Kapat'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

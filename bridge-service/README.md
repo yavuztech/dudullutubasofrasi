@@ -9,8 +9,8 @@ Bu servis, Firestore'daki yeni siparişleri dinler ve ürünleri **mutfak istasy
 ## 📋 Gereksinimler
 
 - **Node.js 18+** (LTS önerilir)
-- **Windows 10/11** (yazıcı driver desteği için)
-- **Yazıcılar** Windows'a kurulmuş ve "Devices & Printers"da görünür olmalı
+- **macOS** (CUPS yazdırma sistemi etkin olmalı) veya **Windows 10/11**
+- **Yazıcılar** işletim sistemine eklenmiş olmalı; macOS'ta `lpstat -p` ile görünür olmalı
 - **Firebase Service Account Key** (JSON dosyası)
 
 ## 🚀 Kurulum
@@ -65,26 +65,42 @@ Konsol çıktısı:
 npm run dev
 ```
 
-## 🖨️ Yazıcı Yapılandırması
+## 🖨️ macOS Yazıcı Yapılandırması
 
-### 1. Yazıcıları Windows'a Ekleyin
+### 1. Yazıcıları macOS'a Ekleyin
 
-- **Settings** → **Devices** → **Printers & Scanners**
-- Her yazıcıyı ekleyin (USB, Network, Bluetooth)
-- Yazıcı adını not edin (örn: `EPSON TM-T88V`, `Star TSP100`)
+- **System Settings** → **Printers & Scanners** → **Add Printer**
+- USB yazıcıları ekleyin ve üretici/model için uygun sürücüyü seçin.
+- Terminal'de `lpstat -p` komutunu çalıştırarak kuyruk adlarını doğrulayın.
+- Bridge çalışacak bilgisayardaki yerel kuyruk adını not edip `.env` dosyasındaki `PRINTER_NAME` alanına yazın.
 
-### 2. Admin Panelden Eşleştirme
+### 2. Her Bilgisayarda Bir Bridge Çalıştırma
 
-1. Web uygulamasında **Admin → Ayarlar** sayfasına gidin
-2. **Bridge Service URL**: `http://localhost:3001` (varsayılan)
-3. **Test** butonuna basarak yazıcı listesini çekin
-4. Her istasyona bir yazıcı atayın:
-   - İstasyon 1 → EPSON TM-T88V
-   - İstasyon 2 → Star TSP100
-5. **Otomatik Yazdırma** aktif edin
-6. **Kaydet**
+Her yazıcının bağlı olduğu bilgisayarda Bridge Service'i ayrı ayrı kurup çalıştırın. Her kurulum aynı Firebase projesindeki `serviceAccountKey.json` dosyasını kullanır. Bilgisayarlar aynı yerel ağa erişebilmelidir.
 
-### 3. Kategorilere İstasyon Ata
+Her bilgisayardaki `bridge-service/.env` dosyasına **o bilgisayara ait tek istasyonu** ve o bilgisayardaki CUPS yazıcı kuyruğunu yazın:
+
+```env
+PORT=3001
+BRIDGE_STATION=station1
+PRINTER_NAME=Gainscha_GA_E200
+```
+
+`BRIDGE_STATION` değerleri: Fırın için `station1`, Izgara için `station2`, Kasa için `station3`, Burger için `station4`. `PRINTER_NAME`, yalnızca o bilgisayarda `lpstat -p` ile görünen yerel kuyruk adıdır. Her bilgisayarda aynı port kullanılabilir.
+
+Örnek olarak Fırın bilgisayarında `BRIDGE_STATION=station1`, Izgara bilgisayarında `BRIDGE_STATION=station2`, Kasa bilgisayarında `BRIDGE_STATION=station3`, Burger bilgisayarında `BRIDGE_STATION=station4` kullanılır. Her birine bağlı yazıcının yerel kuyruk adını ayrıca girin. İstasyon başına birden fazla yazıcı gerekiyorsa aynı istasyon değeriyle birden fazla cihaz yapılandırması ayrıca desteklenmiyor; bu kurulumda tek bilgisayar/bridge/yerel kuyruk istasyon başınadır.
+
+### 3. Admin Panelden Bridge Adreslerini Girme
+
+1. Her bilgisayarın yerel IP adresini bulun ve o bilgisayardaki bridge URL'sini belirleyin (ör. `http://192.168.1.50:3001`).
+2. Web uygulamasında **Admin → Ayarlar** bölümünde Fırın, Izgara, Kasa ve Burger için ilgili bilgisayarın URL'sini girin.
+3. Her URL'nin yanındaki **Test** düğmesini kullanın. Test, bridge'in doğru `BRIDGE_STATION` ile çalıştığını ve yerel yazıcı kuyruğunu görüp görmediğini doğrular.
+4. **Otomatik Yazdırma**'yı açıp **Ayarları Kaydet**'e basın.
+5. Ürün kategorilerini Ürünler sayfasında Fırın, Izgara veya Burger istasyonuna atayın.
+
+Bridge bilgisayarlarında işletim sistemi güvenlik duvarı varsa uygulamanın TCP `3001` portuna yerel ağdan erişmesine izin verin. HTTPS üzerinden yayınlanan web uygulamalarında tarayıcı güvenlik kuralları HTTP bridge adreslerine erişimi engelleyebilir; bu durumda bridge için güvenli HTTPS erişimi veya uygulamayla uyumlu bir yerel ağ kurulumu gerekir.
+
+### 4. Kategorilere İstasyon Ata
 
 **Admin → Ürünler** sayfasında:
 
@@ -93,61 +109,61 @@ npm run dev
 3. Kaydet
 
 Örnek:
-- Izgara → İstasyon 1
-- Fırın → İstasyon 2
-- İçecekler → Yok (yazdırılmaz)
+- Fırın ürünleri → Fırın
+- Izgara ürünleri → Izgara
+- Burger ürünleri → Burger
+- Mutfak fişi gerektirmeyen ürünler (ör. içecekler) → Yok
+
+Kasa fişi, ürün kategorisinden bağımsız olarak kasiyer ekranından manuel yazdırılır.
 
 ## 📄 Nasıl Çalışır?
 
 1. **Garson** yeni sipariş girer → Firestore'a kaydedilir
-2. **Bridge Service** siparişi yakalar
-3. Ürünler **kategorilerine** göre gruplandırılır
-4. Her kategori için **kitchenStation** kontrolü yapılır
-5. İstasyonlara göre **ayrı fişler** oluşturulur
-6. Her fiş, eşleştirilmiş **yazıcıya** gönderilir
+2. Her Bridge yeni sipariş olayını alır
+3. Ürünler kategorilerine göre Fırın/Izgara/Burger olarak gruplandırılır
+4. Bridge, yalnızca `.env` içindeki `BRIDGE_STATION` ile eşleşen ürünleri işler; diğer istasyonları atlar
+5. Her ürün satırı için ayrı fiş oluşturup yalnızca o bilgisayarın `PRINTER_NAME` kuyruğuna gönderir
+
+Bu istasyon filtresi sayesinde tüm Bridge bilgisayarları aynı Firestore siparişlerini dinlese de aynı sipariş kopya yazdırılmaz. Her bilgisayarda farklı `BRIDGE_STATION` kullanılması zorunludur.
 
 **Örnek Sipariş:**
 ```
 Masa 5:
-- 2x Döner (Izgara → İstasyon 1)
-- 1x Pide (Fırın → İstasyon 2)
-- 1x Tavuk Şiş (Izgara → İstasyon 1)
+- 2x Döner (Izgara → Izgara yazıcısı)
+- 1x Pide (Fırın → Fırın yazıcısı)
+- 1x Tavuk Şiş (Izgara → Izgara yazıcısı)
+- 1x Cheeseburger (Burger → Burger yazıcısı)
 ```
 
 **Yazdırılan Fişler:**
 
-**Yazıcı 1 (İstasyon 1):**
+**Fırın yazıcısı:**
 ```
-=================================
-       TUBA SOFRASI
-=================================
+TUBA SOFRASI
+FİŞ NO: 00001
 MASA 5
-İstasyon: İSTASYON 1
-Sipariş: A3F92C
-=================================
+FIRIN
+------------------------------------------
+2x Pide
+```
 
+**Izgara yazıcısı:**
+```
+TUBA SOFRASI
+FİŞ NO: 00002
+MASA 5
+IZGARA
+------------------------------------------
 2x Döner
-
-1x Tavuk Şiş
-
-=================================
-14:35 - 07.05.2026
 ```
 
-**Yazıcı 2 (İstasyon 2):**
+Izgara yazıcısındaki diğer ürün de ayrı fiş alır:
 ```
-=================================
-       TUBA SOFRASI
-=================================
+FİŞ NO: 00003
 MASA 5
-İstasyon: İSTASYON 2
-Sipariş: A3F92C
-=================================
-
-1x Pide
-
-=================================
-14:35 - 07.05.2026
+IZGARA
+------------------------------------------
+1x Tavuk Şiş
 ```
 
 ## 🔧 Windows Servisi Olarak Kurulum (Opsiyonel)
@@ -188,8 +204,9 @@ nssm remove TubaSofrasiBridge confirm
 
 ### "Yazıcı listesi boş"
 
-- Windows Devices & Printers'da yazıcıları kontrol edin
-- Printer driver'ları kurulu mu?
+- macOS **Printers & Scanners** bölümünde yazıcıları kontrol edin
+- `lpstat -p` çıktısında yazıcı kuyrukları görünüyor mu?
+- Yazıcı sürücülerinin kurulu ve yazıcıların açık/bağlı olduğundan emin olun
 - Bridge service yeniden başlatın
 
 ### "Bridge servise ulaşılamıyor"
@@ -209,27 +226,29 @@ nssm remove TubaSofrasiBridge confirm
 1. **Konsol log'larını kontrol edin:**
    - "Otomatik yazdırma kapalı" → Admin ayarlardan aktif edin
    - "İstasyon tanımlanmamış" → Kategorilere istasyon atayın
-   - "Yazıcı tanımlanmamış" → Admin ayarlardan yazıcı eşleştirin
+   - "Bu bridge istasyonunda yapılandırılmadığı için atlandı" → Beklenen station değeri diğer bilgisayardaki bridge tarafından işlenir
+   - `PRINTER_NAME` → `.env` dosyasındaki yerel yazıcı kuyruğu adını `lpstat -p` ile doğrulayın
 
 2. **Test yazdırma:**
-   - Windows'tan yazıcıya test sayfası bastırın
+   - İşletim sisteminden yazıcıya test sayfası bastırın
    - Yazıcı çevrimiçi ve kağıdı var mı?
 
 ## 📦 API Endpoints
 
 ### `GET /`
-Health check.
+Health check; station-specific bridge için yapılandırılmış istasyonu da döndürür.
 
 **Response:**
 ```json
 {
   "status": "Bridge service çalışıyor",
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "station": "station1"
 }
 ```
 
 ### `GET /printers`
-Windows'ta tanımlı yazıcı listesi.
+İşletim sisteminde tanımlı yazıcı listesi (macOS'ta CUPS üzerinden).
 
 **Response:**
 ```json
@@ -242,10 +261,16 @@ Windows'ta tanımlı yazıcı listesi.
 }
 ```
 
+### Kasa fişi yazdırma
+Kasa ekranındaki **Kasa Yazıcısında Yazdır** düğmesi, Admin → Ayarlar bölümündeki Kasa Bridge URL'sine `POST /print/cashier` isteği gönderir. İstek yalnızca `BRIDGE_STATION=station3` olarak yapılandırılmış Bridge tarafından kabul edilir ve `PRINTER_NAME` yerel kuyruğuna ESC/POS RAW olarak yollar. Ürün başına modunda fiyat yazdırılmaz; sipariş bazlı modda tutarlar yazdırılır.
+
+Yeni `pending` siparişlerde Fırın (`station1`), Izgara (`station2`) ve Burger (`station4`) kategorileri yazdırılır. Sipariş kalemleri istasyonlarına yönlendirilir ve **her ürün satırı için ayrı, fiyatsız fiş** çıkar; miktar aynı fişte belirtilir. Kasa (`station3`) yazıcısı mutfak siparişi otomatik çıktısına dahil değildir; kasadan manuel yazdırılır. Tüm kasa ve mutfak fişleri Firestore'daki `counters/receipt-sequence` ortak, kalıcı sayacından numara alır (`00001`, `00002`, ...); bridge yeniden başlatıldığında sıra korunur.
+
 ## 📝 Notlar
 
 - **ESC/POS uyumlu** termal yazıcılar önerilir (Epson, Star, Bixolon vb.)
-- **Network yazıcılar** Windows'ta printer olarak eklenmelidir
+- Yazıcı model ve sürücülerindeki ESC/POS karakter tabloları farklı olabildiğinden, bozuk karakterleri önlemek için Türkçe harfler ASCII karşılıklarıyla yazdırılır (`Ş` → `S`, `ı` → `i`); `₺` yerine `TL` kullanılır. Her fiş başlangıçta yazıcıyı ve satır aralığını sıfırlar; bitişte kağıdı kesip yazıcı durumunu yeniden sıfırlar.
+- Yazıcılar macOS'a eklenmiş bir CUPS kuyruğu olarak görünmelidir
 - Siparişler **pending** durumundayken yazdırılır
 - Her sipariş **bir kez** yazdırılır (duplicate kontrol yok - Firestore snapshot'ları yönetir)
 
