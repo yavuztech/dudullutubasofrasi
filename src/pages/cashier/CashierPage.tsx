@@ -309,6 +309,8 @@ export default function CashierPage() {
         tableLabel: tableLabel(creditBill.table),
         orderIds: creditBill.orders.map((order) => order.id),
         items: creditBill.orders.flatMap((order) => order.items),
+        subtotal: creditBill.total,
+        discountAmount,
         totalAmount: finalTotal,
         mergedTableIds: creditBill.table.mergedTableIds ?? [],
       });
@@ -318,7 +320,15 @@ export default function CashierPage() {
       setSelectedBill(null);
     } catch (error) {
       console.error('Veresiye hesabı kaydedilemedi:', error);
-      toast.error(error instanceof Error ? error.message : 'Veresiye hesabı kaydedilemedi.');
+      const errorCode = (
+        typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && typeof error.code === 'string'
+      ) ? error.code : '';
+      toast.error(errorCode === 'permission-denied'
+        ? 'Açık hesap izni reddedildi. Güncel firestore.rules dosyasını Firebase’e deploy edin ve personel hesabında Kasa rolü olduğunu kontrol edin.'
+        : error instanceof Error ? error.message : 'Açık hesap kaydedilemedi.');
     } finally {
       setClosingId(null);
     }
@@ -740,12 +750,37 @@ export default function CashierPage() {
                       </span>
                     </div>
                     <details className="text-sm">
-                      <summary className="cursor-pointer text-gray-600 font-medium">Hesap ürünlerini göster</summary>
-                      <ul className="mt-2 list-disc list-inside text-gray-500">
+                      <summary className="cursor-pointer text-gray-600 font-medium">Fiş detayını göster</summary>
+                      <div className="mt-2 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-3 font-mono text-xs">
                         {debt.items.map((item, index) => (
-                          <li key={`${item.productId}-${index}`}>{item.quantity} × {item.productName}</li>
+                          <div key={`${item.productId}-${index}`} className="flex justify-between gap-3 py-1">
+                            <span className="min-w-0">{item.productName} ×{item.quantity}</span>
+                            <span className="shrink-0">{formatCurrency(item.unitPrice * item.quantity)}</span>
+                          </div>
                         ))}
-                      </ul>
+                        {debt.discountAmount ? (
+                          <>
+                            <div className="mt-2 border-t border-dashed border-gray-300 pt-2 flex justify-between text-gray-600">
+                              <span>ARA TOPLAM</span>
+                              <span>{formatCurrency(debt.subtotal ?? debt.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0))}</span>
+                            </div>
+                            <div className="flex justify-between pt-1 text-gray-600">
+                              <span>İNDİRİM</span>
+                              <span>-{formatCurrency(debt.discountAmount)}</span>
+                            </div>
+                          </>
+                        ) : null}
+                        <div className="mt-2 border-t border-dashed border-gray-300 pt-2 flex justify-between font-bold">
+                          <span>HESAP TOPLAMI</span>
+                          <span>{formatCurrency(debt.totalAmount)}</span>
+                        </div>
+                        {debt.paidAmount > 0 && (
+                          <div className="flex justify-between pt-1 text-gray-500">
+                            <span>KALAN</span>
+                            <span>{formatCurrency(remainingAmount)}</span>
+                          </div>
+                        )}
+                      </div>
                     </details>
                     {open && (
                       <form
@@ -1266,9 +1301,32 @@ export default function CashierPage() {
               className="input w-full"
               placeholder="Borç kimin adına kaydedilsin?"
             />
-            <div className="mt-4 rounded-xl bg-orange-50 p-3 flex items-center justify-between">
-              <span className="text-sm text-orange-900">Borç tutarı</span>
-              <strong className="text-lg text-orange-900">{formatCurrency(finalTotal)}</strong>
+            <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-3 font-mono text-xs">
+              <p className="text-center font-bold text-gray-700 mb-2">HESAP FİŞİ</p>
+              <div className="flex flex-col divide-y divide-dashed divide-gray-200">
+                {creditBill.orders.flatMap((order) => order.items).map((item, index) => (
+                  <div key={`${item.productId}-${index}`} className="flex justify-between gap-3 py-1.5">
+                    <span className="min-w-0">{item.productName} ×{item.quantity}</span>
+                    <span className="shrink-0">{formatCurrency(item.unitPrice * item.quantity)}</span>
+                  </div>
+                ))}
+              </div>
+              {discountAmount > 0 && (
+                <>
+                  <div className="flex justify-between border-t border-dashed border-gray-300 pt-2 mt-1 text-gray-600">
+                    <span>ARA TOPLAM</span>
+                    <span>{formatCurrency(creditBill.total)}</span>
+                  </div>
+                  <div className="flex justify-between pt-1 text-gray-600">
+                    <span>İNDİRİM</span>
+                    <span>-{formatCurrency(discountAmount)}</span>
+                  </div>
+                </>
+              )}
+              <div className="mt-2 border-t border-dashed border-gray-400 pt-2 flex items-center justify-between font-bold text-sm">
+                <span>TOPLAM BORÇ</span>
+                <span>{formatCurrency(finalTotal)}</span>
+              </div>
             </div>
             <p className="text-xs text-gray-500 mt-3">
               Masa kapatılıp temizlemeye alınır. Borç Açık Hesaplar bölümünde görünür; sonradan kısmi veya tam tahsilat kaydedebilirsiniz.

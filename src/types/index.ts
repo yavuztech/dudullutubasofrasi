@@ -133,6 +133,8 @@ export interface CashDebt {
   tableLabel: string;
   orderIds: string[];
   items: OrderItem[];
+  subtotal?: number;
+  discountAmount?: number;
   totalAmount: number;
   paidAmount: number;
   status: 'open' | 'paid';

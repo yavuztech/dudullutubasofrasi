@@ -14,14 +14,14 @@ service cloud.firestore {
     // roles dizisi VEYA role tekili ile çalışır
     function hasRole(role) {
       return isSignedIn() && (
-        getStaff().role == role ||
+        getStaff().get('role', '') == role ||
         (role in getStaff().get('roles', []))
       );
     }
 
     function hasAnyRole(roles) {
       return isSignedIn() && (
-        getStaff().role in roles ||
+        getStaff().get('role', '') in roles ||
         getStaff().get('roles', []).hasAny(roles)
       );
     }

@@ -25,6 +25,8 @@ interface CreateTableDebtInput {
   tableLabel: string;
   orderIds: string[];
   items: OrderItem[];
+  subtotal: number;
+  discountAmount: number;
   totalAmount: number;
   mergedTableIds: string[];
 }
@@ -83,6 +85,8 @@ export const useDebtStore = create<DebtStore>((set) => ({
       tableLabel: input.tableLabel,
       orderIds: input.orderIds,
       items: input.items,
+      subtotal: input.subtotal,
+      discountAmount: input.discountAmount,
       totalAmount: input.totalAmount,
       paidAmount: 0,
       status: 'open',
