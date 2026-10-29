@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, collection, runTransaction, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { AlertCircle, CheckCircle2, Printer, RefreshCw, RotateCcw, Save, TriangleAlert } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { auth, db } from '../../lib/firebase';
@@ -27,8 +27,32 @@ export default function AdminSettings() {
   const [lastReceiptNumber, setLastReceiptNumber] = useState<number | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resettingCounter, setResettingCounter] = useState(false);
+  const [liveBridgeStatuses, setLiveBridgeStatuses] = useState<Record<string, { online: boolean; printerName?: string; availablePrinters?: string[]; lastPingDate?: Date }>>({});
 
   useEffect(() => subscribe(), [subscribe]);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'bridgeStatus'), (snap) => {
+      const statuses: Record<string, { online: boolean; printerName?: string; availablePrinters?: string[]; lastPingDate?: Date }> = {};
+      snap.docs.forEach((docSnap) => {
+        const data = docSnap.data();
+        let pingDate: Date | null = null;
+        if (data.lastPing instanceof Timestamp) pingDate = data.lastPing.toDate();
+        else if (data.lastPing && typeof data.lastPing === 'object' && 'toDate' in data.lastPing) pingDate = (data.lastPing as { toDate: () => Date }).toDate();
+        else if (data.lastPing instanceof Date) pingDate = data.lastPing;
+
+        const isOnline = pingDate ? (Date.now() - pingDate.getTime() < 35000) : false;
+        statuses[docSnap.id] = {
+          online: isOnline,
+          printerName: data.printerName,
+          availablePrinters: Array.isArray(data.availablePrinters) ? data.availablePrinters : [],
+          lastPingDate: pingDate ?? undefined,
+        };
+      });
+      setLiveBridgeStatuses(statuses);
+    });
+    return unsub;
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -60,6 +84,7 @@ export default function AdminSettings() {
   }, [settings]);
 
   const handleTestConnection = async (stationId: string) => {
+    const stationLabel = KITCHEN_STATIONS.find((station) => station.id === stationId)?.label ?? stationId;
     const bridgeUrl = bridgeUrls[stationId]?.trim().replace(/\/+$/, '');
     if (!bridgeUrl) {
       toast.error('Önce bu istasyonun Bridge adresini girin.');
@@ -72,6 +97,20 @@ export default function AdminSettings() {
       delete next[stationId];
       return next;
     });
+
+    const liveStatus = liveBridgeStatuses[stationId];
+    if (liveStatus && liveStatus.online) {
+      const printerInfo = liveStatus.printerName ? `Abonelik yazıcısı: ${liveStatus.printerName}. ` : '';
+      const listInfo = liveStatus.availablePrinters?.length ? `Yerel yazıcılar: ${liveStatus.availablePrinters.join(', ')}` : '';
+      const message = `Çevrimiçi! (Firestore üzerinden doğrulandı). ${printerInfo}${listInfo}`;
+      setBridgeChecks((previous) => ({
+        ...previous,
+        [stationId]: { status: 'connected', message },
+      }));
+      toast.success(`${stationLabel} Bridge servisi çevrimiçi (Aktif).`);
+      setTestingStation(null);
+      return;
+    }
 
     try {
       const [healthResponse, printers] = await Promise.all([
@@ -92,11 +131,11 @@ export default function AdminSettings() {
         ...previous,
         [stationId]: { status: 'connected', message },
       }));
-      toast.success(`${KITCHEN_STATIONS.find((station) => station.id === stationId)?.label} Bridge bağlantısı başarılı.`);
+      toast.success(`${stationLabel} Bridge bağlantısı başarılı.`);
     } catch (error) {
       let message = error instanceof Error ? error.message : 'Bridge servise bağlanılamadı.';
       if (window.location.protocol === 'https:' && bridgeUrl.startsWith('http://')) {
-        message = 'Tarayıcınız HTTPS (canlı site) üzerinden yerel HTTP servisine (http://localhost:3001) doğrudan erişimi engelliyor (Mixed Content). Ayarları kaydedebilirsiniz; Bridge servisi Firestore üzerinden arka planda otomatik çalışmaya devam eder.';
+        message = 'Tarayıcınız HTTPS üzerinden yerel HTTP servisine (http://localhost:3001) doğrudan erişimi engelliyor (Mixed Content). Ancak bridge-service bilgisayarda açık olduğu sürece veritabanı (Firestore) üzerinden arka planda otomatik çalışmaya devam eder.';
       }
       setBridgeChecks((previous) => ({
         ...previous,

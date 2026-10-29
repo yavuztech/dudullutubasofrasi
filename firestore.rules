@@ -120,6 +120,20 @@ service cloud.firestore {
       allow read, write: if counterId == 'receipt-sequence' && isAdmin();
     }
 
+    // ── Bridge Servis Durumları (Heartbeat) ────────────────────────────────
+    match /bridgeStatus/{stationId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── Kasa Fiş Yazdırma İstekleri ───────────────────────────────────────
+    match /cashierPrintRequests/{requestId} {
+      allow read: if isSignedIn();
+      allow create: if hasAnyRole(['cashier', 'cashier_ladies', 'admin']);
+      allow update: if hasAnyRole(['cashier', 'cashier_ladies', 'admin']);
+      allow delete: if isAdmin();
+    }
+
     // ── Personel ──────────────────────────────────────────────────────────
     match /staff/{uid} {
       // Sadece kendi kaydını veya admin görebilir

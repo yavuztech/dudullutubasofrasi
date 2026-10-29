@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { addDoc, collection, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { X, Printer, List } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { db } from '../../lib/firebase';
 import { formatCurrency } from '../../utils/formatters';
 import type { Order, OrderItem } from '../../types';
 import { usePrinterStore } from '../../stores/printerStore';
@@ -133,24 +135,45 @@ export default function ReceiptModal({ tableNumber, tableLabel, customerName, cu
 
     setPrinting(true);
     try {
-      const bridgeUrl = cashierBridgeUrl.replace(/\/+$/, '');
-      const response = await fetch(`${bridgeUrl}/print/cashier`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ receipts }),
+      // 1. Send print request via Firestore (Works on HTTPS, mobile, tablet & remote hosting without HTTP/CORS issues)
+      const requestRef = await addDoc(collection(db, 'cashierPrintRequests'), {
+        receipts,
+        station: 'station3',
+        status: 'pending',
+        createdAt: serverTimestamp(),
       });
-      const result: { error?: string; printed?: number; printer?: string } = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || 'Kasa yazıcısına fiş gönderilemedi.');
-      }
-      toast.success(`${result.printed ?? receipts.length} fiş ${result.printer} yazıcısına gönderildi.`);
-      onPrinted?.();
+
+      // Listen for result with 10s timeout
+      await new Promise<void>((resolve, reject) => {
+        let isDone = false;
+        const timer = setTimeout(() => {
+          if (isDone) return;
+          isDone = true;
+          unsub();
+          reject(new Error('Kasa yazıcısından yanıt alınamadı. Kasa bilgisayarında bridge-service servisinin açık olduğunu kontrol edin.'));
+        }, 10000);
+
+        const unsub = onSnapshot(doc(db, 'cashierPrintRequests', requestRef.id), (snap) => {
+          if (!snap.exists() || isDone) return;
+          const data = snap.data();
+          if (data.status === 'completed') {
+            isDone = true;
+            clearTimeout(timer);
+            unsub();
+            toast.success(`${receipts.length} fiş ${data.printer ?? 'Kasa'} yazıcısına gönderildi.`);
+            onPrinted?.();
+            resolve();
+          } else if (data.status === 'error') {
+            isDone = true;
+            clearTimeout(timer);
+            unsub();
+            reject(new Error(data.errorMessage || 'Yazdırılamadı'));
+          }
+        });
+      });
     } catch (error) {
       console.error('Kasa fişi yazdırılamadı:', error);
-      let msg = error instanceof Error ? error.message : 'Kasa fişi yazdırılamadı.';
-      if (window.location.protocol === 'https:' && cashierBridgeUrl.startsWith('http://')) {
-        msg = 'Tarayıcı HTTPS sayfasından yerel HTTP servisine (http://localhost:3001) doğrudan erişimi engelledi. Kasa bilgisayarında tarayıcı adres çubuğundaki kilit ikonundan "Güvensiz içerik" izni verebilirsiniz.';
-      }
+      const msg = error instanceof Error ? error.message : 'Kasa fişi yazdırılamadı.';
       toast.error(msg, { duration: 6000 });
     } finally {
       setPrinting(false);

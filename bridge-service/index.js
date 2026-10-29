@@ -158,6 +158,105 @@ async function startFirestoreListener() {
         }
       });
     });
+
+  // Heartbeat interval
+  setInterval(sendHeartbeat, 10000);
+  sendHeartbeat();
+
+  // Listen to cashier print requests
+  startCashierPrintListener();
+}
+
+// ─── Bridge Heartbeat ────────────────────────────────────────────────────────
+async function sendHeartbeat() {
+  if (!bridgeConfig.station) return;
+  try {
+    const printers = await listPrinters();
+    const printerName = getPrinterName(bridgeConfig, printerSettings, bridgeConfig.station) || bridgeConfig.printerName;
+    await db.doc(`bridgeStatus/${bridgeConfig.station}`).set({
+      station: bridgeConfig.station,
+      printerName: printerName || '',
+      availablePrinters: printers,
+      online: true,
+      lastPing: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+  } catch (err) {
+    console.error('Heartbeat gönderilemedi:', err.message);
+  }
+}
+
+// ─── Cashier Print Listener (Firestore) ──────────────────────────────────────
+const cashierPrintRequestsInProgress = new Set();
+
+function startCashierPrintListener() {
+  db.collection('cashierPrintRequests')
+    .where('status', '==', 'pending')
+    .onSnapshot((snap) => {
+      snap.docChanges().forEach((change) => {
+        if (change.type === 'added' || change.type === 'modified') {
+          const requestDoc = change.doc;
+          const reqData = { id: requestDoc.id, ...requestDoc.data() };
+          handleFirestoreCashierPrintRequest(requestDoc.ref, reqData).catch((err) => {
+            console.error(`Kasa fişi yazdırılamadı (${reqData.id}):`, err);
+          });
+        }
+      });
+    }, (err) => {
+      console.error('Kasa fiş istekleri dinlenemedi:', err.message);
+    });
+}
+
+async function handleFirestoreCashierPrintRequest(docRef, reqData) {
+  if (cashierPrintRequestsInProgress.has(reqData.id)) return;
+  cashierPrintRequestsInProgress.add(reqData.id);
+
+  try {
+    const targetStation = reqData.station || 'station3';
+    if (!handlesStation(bridgeConfig, targetStation)) return;
+
+    const printerName = getPrinterName(bridgeConfig, printerSettings, targetStation);
+    if (!printerName) {
+      await docRef.update({
+        status: 'error',
+        errorMessage: 'Kasa yazıcısı tanımlanmamış.',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return;
+    }
+
+    const receipts = reqData.receipts;
+    if (!Array.isArray(receipts) || receipts.length === 0) {
+      await docRef.update({
+        status: 'error',
+        errorMessage: 'Geçersiz fiş içeriği.',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return;
+    }
+
+    const receiptNumbers = await reserveReceiptNumbers(db, receipts.length);
+    const printData = Buffer.concat(receipts.map((receipt, index) =>
+      formatCashierReceipt({ ...receipt, receiptNumber: receiptNumbers[index] })));
+    await printReceipt(printerName, printData);
+
+    await docRef.update({
+      status: 'completed',
+      printer: printerName,
+      receiptNumbers,
+      printedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    console.log(`✓ Firestore üzerinden kasa fişi yazdırıldı (${receipts.length} fiş)`);
+  } catch (err) {
+    console.error('Kasa fişi yazdırma hatası:', err);
+    await docRef.update({
+      status: 'error',
+      errorMessage: err instanceof Error ? err.message : 'Yazdırılamadı',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }).catch(() => {});
+  } finally {
+    cashierPrintRequestsInProgress.delete(reqData.id);
+  }
 }
 
 async function retryUnacknowledgedKitchenPrints() {
