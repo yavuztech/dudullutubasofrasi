@@ -51,7 +51,10 @@ service cloud.firestore {
       allow create: if hasAnyRole(['kitchen', 'waiter', 'waiter_ladies', 'admin']);
       allow update: if canAccessSection(resource.data.get('section', 'normal'))
                     && hasAnyRole(['kitchen', 'waiter', 'waiter_ladies', 'cashier', 'cashier_ladies', 'admin']);
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || (
+                      canAccessSection(resource.data.get('section', 'normal'))
+                      && hasAnyRole(['waiter', 'waiter_ladies'])
+                    );
     }
 
     // ── Ürünler ───────────────────────────────────────────────────────────
