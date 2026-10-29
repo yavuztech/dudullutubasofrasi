@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   collection, query, where, onSnapshot,
   doc, updateDoc, serverTimestamp, addDoc,
@@ -43,12 +44,18 @@ function toDate(v: unknown): Date {
 
 interface Bill { key: string; table: Table; orders: Order[]; sessionId: string | null; total: number; }
 
-export default function CashierPage() {
+interface Props {
+  mode?: 'general' | 'ladies';
+}
+
+export default function CashierPage({ mode }: Props = {}) {
+  const location = useLocation();
   const { tables, subscribe, newSession } = useTableStore();
   const { products, categories, subscribe: subProducts, subscribeCategories } = useProductStore();
   const { settings, subscribe: subSettings } = useSettingsStore();
   const { user } = useAuthStore();
   const cashierLadiesOnly = !!user?.roles.includes('cashier_ladies') && !user.roles.includes('cashier') && !user.roles.includes('admin');
+  const isLadiesView = mode === 'ladies' || location.pathname.endsWith('/ladies') || cashierLadiesOnly;
   const { debts, loading: debtsLoading, subscribe: subscribeDebts, createTableDebt, recordPayment } = useDebtStore();
 
   const [tab, setTab] = useState<Tab>('tables');
@@ -69,6 +76,7 @@ export default function CashierPage() {
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null); // takeaway fiş
   const [confirmCloseTakeaway, setConfirmCloseTakeaway] = useState<{ order: Order; finalAmount?: number } | null>(null);
   const [closeTakeawayAfterPrint, setCloseTakeawayAfterPrint] = useState(false);
+  const [sectionFilter, setSectionFilter] = useState<'all' | 'normal' | 'family' | 'ladies'>('all');
 
   // Discount
   const [applyDiscount, setApplyDiscount] = useState(false);
@@ -98,24 +106,24 @@ export default function CashierPage() {
     const u2 = subProducts();
     const u3 = subscribeCategories();
     const u4 = subSettings();
-    const u5 = subscribeDebts(cashierLadiesOnly ? 'ladies' : undefined);
+    const u5 = subscribeDebts(isLadiesView ? 'ladies' : undefined);
     return () => { u1(); u2(); u3(); u4(); u5(); };
-  }, [cashierLadiesOnly, subscribe, subProducts, subscribeCategories, subSettings, subscribeDebts]);
+  }, [isLadiesView, subscribe, subProducts, subscribeCategories, subSettings, subscribeDebts]);
 
   useEffect(() => {
     const filters = [
       where('type', '==', 'table'),
       where('status', 'in', ['pending', 'preparing', 'ready', 'delivered']),
     ];
-    if (cashierLadiesOnly) filters.push(where('tableSection', '==', 'ladies'));
+    if (isLadiesView) filters.push(where('tableSection', '==', 'ladies'));
     return onSnapshot(
       query(collection(db, 'orders'), ...filters),
       (snap) => setActiveTableOrders(snap.docs.map((d) => ({ ...(d.data() as Omit<Order, 'id' | 'createdAt' | 'updatedAt'>), id: d.id, createdAt: toDate(d.data().createdAt), updatedAt: toDate(d.data().updatedAt) } as Order)))
     );
-  }, [cashierLadiesOnly]);
+  }, [isLadiesView]);
 
   useEffect(() => {
-    if (cashierLadiesOnly) return;
+    if (isLadiesView) return;
     const legacyOrders = activeTableOrders.filter((order) => !order.tableSection && order.tableId);
     if (legacyOrders.length === 0) return;
 
@@ -133,18 +141,14 @@ export default function CashierPage() {
         console.error('Mevcut siparişlerin masa bölümü bilgisi güncellenemedi:', error);
       });
     }
-  }, [activeTableOrders, tables, cashierLadiesOnly]);
+  }, [activeTableOrders, tables, isLadiesView]);
 
   useEffect(() => {
-    if (cashierLadiesOnly) {
-      setTakeawayOrders([]);
-      return;
-    }
     return onSnapshot(
       query(collection(db, 'orders'), where('type', '==', 'takeaway'), where('status', 'in', ['pending', 'preparing', 'ready', 'delivered'])),
       (snap) => setTakeawayOrders(snap.docs.map((d) => ({ ...(d.data() as Omit<Order, 'id' | 'createdAt' | 'updatedAt'>), id: d.id, createdAt: toDate(d.data().createdAt), updatedAt: toDate(d.data().updatedAt) } as Order)).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()))
     );
-  }, [cashierLadiesOnly]);
+  }, []);
 
   const bills = useMemo((): Bill[] => {
     const map = new Map<string, Order[]>();
@@ -502,29 +506,80 @@ export default function CashierPage() {
       <div className="flex gap-2 mb-5">
         <button onClick={() => setTab('tables')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'tables' ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
           <LayoutGrid className="w-4 h-4" />Masalar
-          {(cashierLadiesOnly ? ladiesBills.length : bills.length) > 0 && <span className={`text-xs rounded-full px-1.5 ${tab === 'tables' ? 'bg-white/25 text-white' : 'bg-brand-100 text-brand-700'}`}>{cashierLadiesOnly ? ladiesBills.length : bills.length}</span>}
+          {(isLadiesView ? ladiesBills.length : bills.length) > 0 && <span className={`text-xs rounded-full px-1.5 ${tab === 'tables' ? 'bg-white/25 text-white' : 'bg-brand-100 text-brand-700'}`}>{isLadiesView ? ladiesBills.length : bills.length}</span>}
         </button>
-        {!cashierLadiesOnly && <button onClick={() => setTab('takeaway')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'takeaway' ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+        <button onClick={() => setTab('takeaway')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'takeaway' ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
           <Package className="w-4 h-4" />Gel Al
           {takeawayOrders.length > 0 && <span className={`text-xs rounded-full px-1.5 ${tab === 'takeaway' ? 'bg-white/25 text-white' : 'bg-brand-100 text-brand-700'}`}>{takeawayOrders.length}</span>}
-        </button>}
-        {!cashierLadiesOnly && <button onClick={() => setTab('debts')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'debts' ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+        </button>
+        <button onClick={() => setTab('debts')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'debts' ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
           <Banknote className="w-4 h-4" />Açık Hesap
           {debts.filter((debt) => debt.status === 'open').length > 0 && (
             <span className={`text-xs rounded-full px-1.5 ${tab === 'debts' ? 'bg-white/25 text-white' : 'bg-orange-100 text-orange-700'}`}>
               {debts.filter((debt) => debt.status === 'open').length}
             </span>
           )}
-        </button>}
+        </button>
       </div>
 
       {/* Masalar */}
-      {tab === 'tables' && (bills.length === 0 ? (
+      {tab === 'tables' && ((isLadiesView ? ladiesBills : bills).length === 0 ? (
         <div className="text-center py-16 text-gray-400"><LayoutGrid className="w-12 h-12 mx-auto mb-3 opacity-30" /><p className="font-semibold">Aktif hesap yok</p></div>
       ) : (
         <div className="flex flex-col gap-6">
+          {!isLadiesView && (
+            <div className="flex gap-2 border-b border-gray-100 pb-3 overflow-x-auto no-scrollbar">
+              <button
+                onClick={() => setSectionFilter('all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex-shrink-0 ${
+                  sectionFilter === 'all'
+                    ? 'bg-brand-600 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Tüm Masalar ({bills.length})
+              </button>
+              {normalBills.length > 0 && (
+                <button
+                  onClick={() => setSectionFilter('normal')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex-shrink-0 ${
+                    sectionFilter === 'normal'
+                      ? 'bg-brand-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  🍽️ Masalar ({normalBills.length})
+                </button>
+              )}
+              {familyBills.length > 0 && (
+                <button
+                  onClick={() => setSectionFilter('family')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex-shrink-0 ${
+                    sectionFilter === 'family'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  👨‍👩‍👧‍👦 Aile Bölümü ({familyBills.length})
+                </button>
+              )}
+              {ladiesBills.length > 0 && (
+                <button
+                  onClick={() => setSectionFilter('ladies')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex-shrink-0 ${
+                    sectionFilter === 'ladies'
+                      ? 'bg-pink-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Hanım Kafeteryası ({ladiesBills.length})
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Normal Masalar */}
-          {normalBills.length > 0 && (
+          {normalBills.length > 0 && (sectionFilter === 'all' || sectionFilter === 'normal') && (
             <div>
               <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
                 🍽️ MASALAR ({normalBills.length})
@@ -547,7 +602,7 @@ export default function CashierPage() {
           )}
           
           {/* Aile Bölümü */}
-          {familyBills.length > 0 && (
+          {familyBills.length > 0 && (sectionFilter === 'all' || sectionFilter === 'family') && (
             <div>
               <h3 className="text-sm font-bold text-blue-600 uppercase tracking-wider mb-3 flex items-center gap-2">
                 👨‍👩‍👧‍👦 AİLE BÖLÜMÜ ({familyBills.length})
@@ -573,7 +628,7 @@ export default function CashierPage() {
           )}
 
           {/* Hanım Kafeteryası */}
-          {ladiesBills.length > 0 && (
+          {ladiesBills.length > 0 && (sectionFilter === 'all' || sectionFilter === 'ladies') && (
             <div>
               <h3 className="text-sm font-bold text-pink-600 uppercase tracking-wider mb-3 flex items-center gap-2">
                 HANIM KAFETERYASI ({ladiesBills.length})

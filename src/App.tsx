@@ -90,11 +90,16 @@ function App() {
             } />
           </Route>
 
-          {/* ── Cashier routes (role: cashier | admin) ── */}
+          {/* ── Cashier routes (role: cashier | cashier_ladies | admin) ── */}
           <Route element={<ProtectedRoute allowedRoles={['cashier', 'cashier_ladies', 'admin']} />}>
             <Route path="/cashier" element={
               <StaffLayout title="Kasa">
-                <CashierPage />
+                <CashierPage mode="general" />
+              </StaffLayout>
+            } />
+            <Route path="/cashier/ladies" element={
+              <StaffLayout title="Hanım Kafeteryası Kasası">
+                <CashierPage mode="ladies" />
               </StaffLayout>
             } />
           </Route>

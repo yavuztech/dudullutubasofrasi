@@ -8,7 +8,7 @@ const ROLE_ROUTES: Record<string, string> = {
   waiter:   '/waiter',
   waiter_ladies: '/waiter',
   cashier:  '/cashier',
-  cashier_ladies: '/cashier',
+  cashier_ladies: '/cashier/ladies',
   clothing: '/clothing',
   admin:    '/admin/staff',
 };

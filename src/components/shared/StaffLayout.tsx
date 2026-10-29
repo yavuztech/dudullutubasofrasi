@@ -26,7 +26,7 @@ const navItems = {
     { path: '/cashier', label: 'Kasa', icon: Banknote },
   ],
   cashier_ladies: [
-    { path: '/cashier', label: 'Hanım Kafeteryası Kasası', icon: Banknote },
+    { path: '/cashier/ladies', label: 'Hanım Kafeteryası Kasası', icon: Banknote },
   ],
   clothing: [
     { path: '/clothing', label: 'Giyim Kasası', icon: ShoppingBag },
@@ -51,7 +51,7 @@ export default function StaffLayout({ children, title }: Props) {
   const items = user
     ? user.roles
         .flatMap((r) => navItems[r] ?? [])
-        .filter((item, i, arr) => arr.findIndex((x) => x.label === item.label) === i)
+        .filter((item, i, arr) => arr.findIndex((x) => x.path === item.path) === i)
     : [];
 
   const handleSignOut = async () => {
