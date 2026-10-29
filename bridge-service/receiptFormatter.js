@@ -80,7 +80,7 @@ function formatKitchenReceipt({ order, item, station, receiptNumber }) {
   ];
 
   if (order.tableNumber) {
-    lines.push(`MASA ${order.tableNumber}`);
+    lines.push(order.tableLabel || `MASA ${order.tableNumber}`);
   } else {
     lines.push('GEL-AL');
   }

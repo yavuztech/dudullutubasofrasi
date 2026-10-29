@@ -91,7 +91,7 @@ function App() {
           </Route>
 
           {/* ── Cashier routes (role: cashier | admin) ── */}
-          <Route element={<ProtectedRoute allowedRoles={['cashier', 'admin']} />}>
+          <Route element={<ProtectedRoute allowedRoles={['cashier', 'cashier_ladies', 'admin']} />}>
             <Route path="/cashier" element={
               <StaffLayout title="Kasa">
                 <CashierPage />
@@ -109,7 +109,7 @@ function App() {
           </Route>
 
           {/* ── Waiter routes (role: waiter | admin) ── */}
-          <Route element={<ProtectedRoute allowedRoles={['waiter', 'admin']} />}>
+          <Route element={<ProtectedRoute allowedRoles={['waiter', 'waiter_ladies', 'admin']} />}>
             <Route path="/waiter" element={
               <StaffLayout title="Garson — Bildirimler">
                 <WaiterNotifications />

@@ -14,6 +14,7 @@ interface Props {
   discountRate?: number;
   discountApplied?: boolean;
   onClose: () => void;
+  onPrinted?: () => void;
 }
 
 type PrintMode = 'order' | 'item';
@@ -43,7 +44,7 @@ type CashierReceiptPayload =
       finalTotal: number;
     };
 
-export default function ReceiptModal({ tableNumber, tableLabel, customerName, customerPhone, orders, discountRate = 0, discountApplied = false, onClose }: Props) {
+export default function ReceiptModal({ tableNumber, tableLabel, customerName, customerPhone, orders, discountRate = 0, discountApplied = false, onClose, onPrinted }: Props) {
   const [mode, setMode] = useState<PrintMode>('item');
   const [printing, setPrinting] = useState(false);
   const [receiptCustomerName, setReceiptCustomerName] = useState(customerName ?? '');
@@ -143,6 +144,7 @@ export default function ReceiptModal({ tableNumber, tableLabel, customerName, cu
         throw new Error(result.error || 'Kasa yazıcısına fiş gönderilemedi.');
       }
       toast.success(`${result.printed ?? receipts.length} fiş ${result.printer} yazıcısına gönderildi.`);
+      onPrinted?.();
     } catch (error) {
       console.error('Kasa fişi yazdırılamadı:', error);
       toast.error(error instanceof Error ? error.message : 'Kasa fişi yazdırılamadı.');

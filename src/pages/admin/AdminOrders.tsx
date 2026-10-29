@@ -223,7 +223,7 @@ function OrderRow({ order, expanded, onToggle }: { order: Order; expanded: boole
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-gray-900 text-sm">
-            {order.type === 'table' ? `Masa ${order.tableNumber}` : `Gel Al — ${order.customerName ?? ''}`}
+            {order.type === 'table' ? order.tableLabel ?? `Masa ${order.tableNumber}` : `Gel Al — ${order.customerName ?? ''}`}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">
             {format(order.createdAt, 'd MMM yyyy, HH:mm', { locale: tr })}

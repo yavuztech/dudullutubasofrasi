@@ -43,7 +43,7 @@ export default function OrderTracker({ order, onClose, inline }: Props) {
 
       <h2 className={`font-bold text-gray-900 mb-0.5 ${inline ? 'text-sm' : 'text-lg'}`}>Sipariş Durumu</h2>
       <p className="text-xs text-gray-500 mb-4">
-        {order.type === 'table' ? `Masa ${order.tableNumber}` : 'Gel Al Siparişi'}
+        {order.type === 'table' ? order.tableLabel ?? `Masa ${order.tableNumber}` : 'Gel Al Siparişi'}
         {' · '}{formatTime(order.createdAt)}
       </p>
 

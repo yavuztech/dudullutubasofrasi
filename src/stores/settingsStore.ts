@@ -9,7 +9,6 @@ const DEFAULTS: GelAlSettings = {
   whatsappNumber: '',
   staffDiscount: false,
   staffDiscountRate: 20,
-  enableTableCleaning: true,
 };
 
 interface SettingsState {

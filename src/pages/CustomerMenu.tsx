@@ -13,6 +13,7 @@ import Cart from '../components/customer/Cart';
 import OrderTracker from '../components/customer/OrderTracker';
 import NotificationPermissionModal from '../components/shared/NotificationPermissionModal';
 import { formatCurrency } from '../utils/formatters';
+import { getTableDisplayName } from '../utils/tableUtils';
 import { getFCMToken, vibrate } from '../lib/notifications';
 import type { CartItem, Order } from '../types';
 
@@ -62,7 +63,7 @@ export default function CustomerMenu() {
             vibrate([300, 100, 300, 100, 300]);
             toast.success(
               o.type === 'table'
-                ? `Masa ${o.tableNumber} — Siparişiniz hazır! 🔔`
+                ? `${o.tableLabel ?? `Masa ${o.tableNumber}`} — Siparişiniz hazır! 🔔`
                 : 'Siparişiniz hazır!',
               { duration: 8000 }
             );
@@ -150,10 +151,18 @@ export default function CustomerMenu() {
     try {
       await updateOrderItems(editingOrder.id, validItems);
       const isCancelled = validItems.length === 0;
+      const tableName = getTableDisplayName(table);
       const msg = isCancelled
-        ? `Masa ${table.number} — Müşteri siparişi iptal etti`
-        : `Masa ${table.number} — Müşteri siparişini düzenledi`;
-      await createNotification({ type: 'order_ready_waiter', orderId: editingOrder.id, tableId: table.id, tableNumber: table.number, message: msg, targetRole: 'waiter' });
+        ? `${tableName} — Müşteri siparişi iptal etti`
+        : `${tableName} — Müşteri siparişini düzenledi`;
+      await createNotification({
+        type: 'order_ready_waiter',
+        orderId: editingOrder.id,
+        tableId: table.id,
+        tableNumber: table.number,
+        message: msg,
+        targetRole: table.section === 'ladies' ? 'waiter_ladies' : 'waiter',
+      });
       toast.success(isCancelled ? 'Sipariş iptal edildi.' : 'Sipariş güncellendi.');
       setEditingOrder(null);
     } catch {
@@ -176,14 +185,12 @@ export default function CustomerMenu() {
       const fcmToken = await getFCMToken();
       const totalAmount = cart.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
 
-      // Check if table needs cleaning first (occupied + dirty edge case)
-      const tableNeedsCleaning =
-        table.status === 'needs_cleaning' || table.status === 'being_cleaned';
-
       const orderId = await createOrder({
         type: 'table',
         tableId: table.id,
         tableNumber: table.number,
+        tableLabel: getTableDisplayName(table),
+        tableSection: table.section ?? 'normal',
         ...(table.sessionId ? { sessionId: table.sessionId } : {}),
         items: cart.map((i) => {
           const product = products.find((candidate) => candidate.id === i.productId);
@@ -198,7 +205,6 @@ export default function CustomerMenu() {
         status: 'pending',
         totalAmount,
         ...(fcmToken ? { customerPushToken: fcmToken } : {}),
-        ...(tableNeedsCleaning ? { notes: 'MASA_KIRLI' } : {}),
       });
 
       // Update table status (best-effort — customer may not have write permission)
@@ -208,20 +214,6 @@ export default function CustomerMenu() {
           await updateTableStatus(table.id, 'occupied', orderId);
         }
       } catch { /* non-critical */ }
-
-      // Create cleaning notification if needed (best-effort)
-      if (tableNeedsCleaning) {
-        try {
-          const { createNotification } = useNotificationStore.getState();
-          await createNotification({
-            type: 'table_needs_cleaning',
-            tableId: table.id,
-            tableNumber: table.number,
-            message: `Masa ${table.number} müşteri oturdu ama masa temizlenmemiş! Lütfen temizleyin.`,
-            targetRole: 'waiter',
-          });
-        } catch { /* non-critical */ }
-      }
 
       // activeOrders is updated automatically by the query listener
       setCart([]);

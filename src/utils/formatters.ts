@@ -43,18 +43,14 @@ export function tableStatusLabel(status: string): string {
   const map: Record<string, string> = {
     available:      'Boş',
     occupied:       'Dolu',
-    needs_cleaning: 'Temizlenmeli',
-    being_cleaned:  'Temizleniyor',
   };
-  return map[status] ?? status;
+  return map[status] ?? 'Boş';
 }
 
 export function tableStatusColor(status: string): string {
   const map: Record<string, string> = {
     available:      'bg-green-100 text-green-800',
     occupied:       'bg-blue-100 text-blue-800',
-    needs_cleaning: 'bg-red-100 text-red-800',
-    being_cleaned:  'bg-yellow-100 text-yellow-800',
   };
-  return map[status] ?? 'bg-gray-100 text-gray-800';
+  return map[status] ?? map.available;
 }

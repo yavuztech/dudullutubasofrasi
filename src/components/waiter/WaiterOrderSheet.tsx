@@ -54,6 +54,7 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
       collection(db, 'orders'),
       where('tableId', '==', table.id),
       where('status', 'in', ['pending', 'preparing', 'ready', 'delivered']),
+      where('tableSection', '==', table.section ?? 'normal'),
     );
     const unsub = onSnapshot(q, (snap) => {
       const orders = snap.docs
@@ -103,6 +104,8 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
         type: 'table',
         tableId: table.id,
         tableNumber: table.number,
+        tableLabel: getTableDisplayName(table),
+        tableSection: table.section ?? 'normal',
         ...(table.sessionId ? { sessionId: table.sessionId } : {}),
         items: cart.map((i) => {
           const product = products.find((candidate) => candidate.id === i.productId);
@@ -117,7 +120,7 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
         status: 'pending',
         totalAmount: cartTotal,
       });
-      if (table.status === 'available' || table.status === 'needs_cleaning' || table.status === 'being_cleaned') {
+      if (table.status === 'available') {
         await updateTableStatus(table.id, 'occupied', orderId);
       }
       toast.success(`${getTableDisplayName(table)} sipariş mutfağa gönderildi!`);

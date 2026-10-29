@@ -51,7 +51,9 @@ export default function KitchenOrders() {
         await createNotification({
           type: 'order_ready_waiter', orderId: order.id,
           tableId: order.tableId, tableNumber: order.tableNumber,
-          message: `${displayName} sipariş hazır! 🔔`, targetRole: 'waiter',
+          tableLabel: displayName,
+          message: `${displayName} sipariş hazır! 🔔`,
+          targetRole: order.tableSection === 'ladies' ? 'waiter_ladies' : 'waiter',
         });
         toast.success(`Garson bilgilendirildi — ${displayName}`);
       }

@@ -7,11 +7,12 @@ import {
   runTransaction,
   serverTimestamp,
   Timestamp,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { nanoid } from '../utils/nanoid';
-import type { CashDebt, OrderItem } from '../types';
+import type { CashDebt, OrderItem, TableSection } from '../types';
 
 function toDate(value: unknown): Date {
   if (value instanceof Timestamp) return value.toDate();
@@ -23,6 +24,7 @@ interface CreateTableDebtInput {
   customerName: string;
   tableId: string;
   tableLabel: string;
+  tableSection: TableSection;
   orderIds: string[];
   items: OrderItem[];
   subtotal: number;
@@ -34,7 +36,7 @@ interface CreateTableDebtInput {
 interface DebtStore {
   debts: CashDebt[];
   loading: boolean;
-  subscribe: () => () => void;
+  subscribe: (tableSection?: TableSection) => () => void;
   createTableDebt: (input: CreateTableDebtInput) => Promise<void>;
   recordPayment: (debtId: string, amount: number) => Promise<void>;
 }
@@ -43,8 +45,10 @@ export const useDebtStore = create<DebtStore>((set) => ({
   debts: [],
   loading: true,
 
-  subscribe: () => onSnapshot(
-    query(collection(db, 'cashDebts')),
+  subscribe: (tableSection) => onSnapshot(
+    tableSection
+      ? query(collection(db, 'cashDebts'), where('tableSection', '==', tableSection))
+      : query(collection(db, 'cashDebts')),
     (snapshot) => {
       const debts = snapshot.docs.map((debtDoc) => {
         const data = debtDoc.data();
@@ -83,6 +87,7 @@ export const useDebtStore = create<DebtStore>((set) => ({
       customerName: input.customerName.trim(),
       tableId: input.tableId,
       tableLabel: input.tableLabel,
+      tableSection: input.tableSection,
       orderIds: input.orderIds,
       items: input.items,
       subtotal: input.subtotal,
@@ -105,7 +110,7 @@ export const useDebtStore = create<DebtStore>((set) => ({
 
     batch.update(tableRef, {
       sessionId,
-      status: 'needs_cleaning',
+      status: 'available',
       mergedTableIds: [],
       mergedTableNumbers: [],
       updatedAt: serverTimestamp(),
@@ -113,7 +118,7 @@ export const useDebtStore = create<DebtStore>((set) => ({
 
     input.mergedTableIds.forEach((tableId) => {
       batch.update(doc(db, 'tables', tableId), {
-        status: 'needs_cleaning',
+        status: 'available',
         mergedIntoId: null,
         updatedAt: serverTimestamp(),
       });

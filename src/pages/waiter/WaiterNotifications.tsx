@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Bell, Utensils, Sparkles, PackageCheck } from 'lucide-react';
+import { Bell, Utensils, PackageCheck } from 'lucide-react';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useOrderStore } from '../../stores/orderStore';
@@ -16,7 +16,10 @@ export default function WaiterNotifications() {
 
   useEffect(() => {
     if (!user) return;
-    const unsub = subscribe('waiter');
+    const targetRole = user.roles.includes('waiter_ladies') && !user.roles.includes('waiter')
+      ? 'waiter_ladies'
+      : 'waiter';
+    const unsub = subscribe(targetRole);
     return unsub;
   }, [user]);
 
@@ -41,7 +44,7 @@ export default function WaiterNotifications() {
     try {
       await updateOrderStatus(n.orderId, 'delivered');
       await markRead(n.id);
-      toast.success(`Masa ${n.tableNumber} siparişi teslim edildi.`);
+      toast.success(`${n.tableLabel ?? `Masa ${n.tableNumber}`} siparişi teslim edildi.`);
     } catch {
       toast.error('İşlem başarısız.');
     } finally {
@@ -68,19 +71,15 @@ export default function WaiterNotifications() {
         <div className="flex flex-col gap-2">
           {notifications.map((n) => {
             const isOrder   = n.type === 'order_ready_waiter';
-            const isCleaning = n.type === 'table_needs_cleaning';
             return (
               <div
                 key={n.id}
                 className={`card flex items-start gap-3 transition-opacity ${n.read ? 'opacity-60' : ''}`}
               >
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                  isOrder   ? 'bg-green-100' :
-                  isCleaning ? 'bg-orange-100' : 'bg-gray-100'
+                  isOrder ? 'bg-green-100' : 'bg-gray-100'
                 }`}>
-                  {isOrder    ? <Utensils className="w-5 h-5 text-green-600" /> :
-                   isCleaning ? <Sparkles className="w-5 h-5 text-orange-500" /> :
-                   <Bell className="w-5 h-5 text-gray-500" />}
+                  {isOrder ? <Utensils className="w-5 h-5 text-green-600" /> : <Bell className="w-5 h-5 text-gray-500" />}
                 </div>
 
                 <div className="flex-1 min-w-0">

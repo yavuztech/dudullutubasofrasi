@@ -6,7 +6,9 @@ import { useAuthStore } from '../stores/authStore';
 const ROLE_ROUTES: Record<string, string> = {
   kitchen:  '/kitchen/orders',
   waiter:   '/waiter',
+  waiter_ladies: '/waiter',
   cashier:  '/cashier',
+  cashier_ladies: '/cashier',
   clothing: '/clothing',
   admin:    '/admin/staff',
 };

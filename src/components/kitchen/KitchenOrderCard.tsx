@@ -31,7 +31,7 @@ export default function KitchenOrderCard({ order, onMarkReady, onMarkPreparing, 
               <Package className="w-4 h-4 text-brand-600" />
             )}
             <span className="font-bold text-gray-900">
-              {order.type === 'table' ? (tableDisplayName || `Masa ${order.tableNumber}`) : 'Gel Al'}
+              {order.type === 'table' ? (tableDisplayName || order.tableLabel || `Masa ${order.tableNumber}`) : 'Gel Al'}
             </span>
             {order.type === 'takeaway' && order.customerPhone && (
               <span className="text-xs text-gray-500 flex items-center gap-1">
@@ -76,7 +76,7 @@ export default function KitchenOrderCard({ order, onMarkReady, onMarkPreparing, 
 
       {order.notes && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-xs text-yellow-800 mb-3">
-          📝 {order.notes === 'MASA_KIRLI' ? '⚠️ Masa temizlenmemiş olabilir!' : order.notes}
+          📝 {order.notes}
         </div>
       )}
 

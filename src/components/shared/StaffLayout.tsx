@@ -18,8 +18,15 @@ const navItems = {
     { path: '/waiter', label: 'Bildirimler', icon: Bell },
     { path: '/waiter/tables', label: 'Masalar', icon: LayoutDashboard },
   ],
+  waiter_ladies: [
+    { path: '/waiter', label: 'Bildirimler', icon: Bell },
+    { path: '/waiter/tables', label: 'Hanım Masaları', icon: LayoutDashboard },
+  ],
   cashier: [
     { path: '/cashier', label: 'Kasa', icon: Banknote },
+  ],
+  cashier_ladies: [
+    { path: '/cashier', label: 'Hanım Kafeteryası Kasası', icon: Banknote },
   ],
   clothing: [
     { path: '/clothing', label: 'Giyim Kasası', icon: ShoppingBag },

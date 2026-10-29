@@ -36,7 +36,6 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
         : getTableDisplayName(t);
       return `Dolu — ${displayName}`;
     }
-    if (t.status === 'needs_cleaning') return 'Temizlik Bekleniyor';
     return 'Boş';
   };
 
@@ -46,21 +45,22 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
   const candidates = tables.filter((t) => {
     if (t.id === sourceTable.id) return false;
     if (t.mergedIntoId) return false; // zaten başka masaya eklenmiş
+    if (t.parentTableId || sourceTable.parentTableId) return false;
     
     // Sadece aynı section'daki masalar
     const targetSection = t.section ?? 'normal';
     if (sourceSection !== targetSection) return false;
     
-    if (mode === 'transfer') return t.status === 'available' || t.status === 'needs_cleaning';
-    if (mode === 'join')     return t.status === 'available' || t.status === 'needs_cleaning';
+    if (mode === 'transfer') return t.status === 'available';
+    if (mode === 'join')     return t.status === 'available';
     // merge → dolu masalar
-    return t.status === 'occupied' || t.status === 'needs_cleaning';
+    return t.status === 'occupied';
   });
 
   const descriptions: Record<Mode, string> = {
-    transfer: `${getTableDisplayName(sourceTable)}'deki siparişler seçilen boş masaya taşınır. Kaynak masa temizlemeye alınır.`,
+    transfer: `${getTableDisplayName(sourceTable)}'deki siparişler seçilen boş masaya taşınır. Kaynak masa boşaltılır.`,
     join:     `Seçilen boş masa fiziksel olarak ${getTableDisplayName(sourceTable)}'e eklenir. Siparişler aynı hesapta toplanır.`,
-    merge:    `${getTableDisplayName(sourceTable)}'deki siparişler seçilen dolu masanın hesabına eklenir. Kaynak masa temizlemeye alınır.`,
+    merge:    `${getTableDisplayName(sourceTable)}'deki siparişler seçilen dolu masanın hesabına eklenir. Kaynak masa boşaltılır.`,
   };
 
   const handleSubmit = async () => {
@@ -106,23 +106,25 @@ export default function TableTransferModal({ sourceTable, onClose }: Props) {
         updateDoc(doc(db, 'orders', d.id), {
           tableId: target.id,
           tableNumber: target.number,
+          tableLabel: getTableDisplayName(target),
+          tableSection: target.section ?? 'normal',
           sessionId: targetSessionId,
           updatedAt: serverTimestamp(),
         }),
       ));
 
-      // Kaynak masayı temizlemeye al, merge alanlarını sıfırla
+      // Kaynak masayı boşalt, merge alanlarını sıfırla
       await updateDoc(doc(db, 'tables', sourceTable.id), {
-        status: 'needs_cleaning',
+        status: 'available',
         mergedTableIds: [],
         mergedTableNumbers: [],
         updatedAt: serverTimestamp(),
       });
-      // Kaynak masaya bağlı diğer masaları da sıfırla
+      // Kaynak masaya bağlı diğer masaları da boşalt
       if (sourceTable.mergedTableIds?.length) {
         await Promise.all(sourceTable.mergedTableIds.map((id) =>
           updateDoc(doc(db, 'tables', id), {
-            status: 'needs_cleaning',
+            status: 'available',
             mergedIntoId: null,
             updatedAt: serverTimestamp(),
           }),

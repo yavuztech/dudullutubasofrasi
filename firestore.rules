@@ -30,11 +30,27 @@ service cloud.firestore {
       return hasRole('admin');
     }
 
+    function isStaff() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/staff/$(request.auth.uid))
+        && hasAnyRole(['admin', 'kitchen', 'waiter', 'waiter_ladies', 'cashier', 'cashier_ladies', 'clothing']);
+    }
+
+    function canAccessSection(section) {
+      return isAdmin()
+        || hasRole('kitchen')
+        || hasRole('cashier')
+        || (hasRole('waiter') && section != 'ladies')
+        || (hasRole('waiter_ladies') && section == 'ladies')
+        || (hasRole('cashier_ladies') && section == 'ladies');
+    }
+
     // ── Masalar ───────────────────────────────────────────────────────────
     match /tables/{tableId} {
       allow read:   if true;   // QR okuma için herkese açık
-      allow create: if hasAnyRole(['kitchen', 'waiter', 'admin']);
-      allow update: if hasAnyRole(['kitchen', 'waiter', 'cashier', 'admin']);
+      allow create: if hasAnyRole(['kitchen', 'waiter', 'waiter_ladies', 'admin']);
+      allow update: if canAccessSection(resource.data.get('section', 'normal'))
+                    && hasAnyRole(['kitchen', 'waiter', 'waiter_ladies', 'cashier', 'cashier_ladies', 'admin']);
       allow delete: if isAdmin();
     }
 
@@ -60,29 +76,33 @@ service cloud.firestore {
       allow create: if true;
 
       // Tek sipariş okuma: herkese açık (müşteri takip için ID ile erişim)
-      allow get: if true;
+      allow get: if !isStaff() || canAccessSection(resource.data.get('tableSection', 'normal'));
 
       // Liste/sorgu: sadece personel (müşteri tüm siparişleri görmemeli)
-      allow list: if hasAnyRole(['kitchen', 'waiter', 'cashier', 'admin']);
+      allow list: if canAccessSection(resource.data.get('tableSection', 'normal'));
 
       // müşteri kendi siparişini de sorgulayabilsin (telefon/sessionId filtreli)
       allow list: if
-        request.query.filters.size() > 0 && (
+        !isStaff()
+        && request.query.filters.size() > 0 && (
           ('customerPhone' in request.query.filters[0]) ||
           ('sessionId'     in request.query.filters[0]) ||
           ('tableId'       in request.query.filters[0])
         );
 
-      allow update: if hasAnyRole(['kitchen', 'waiter', 'cashier', 'admin'])
+      allow update: if (
+                      canAccessSection(resource.data.get('tableSection', 'normal'))
+                      && hasAnyRole(['kitchen', 'waiter', 'waiter_ladies', 'cashier', 'cashier_ladies', 'admin'])
+                    )
                     // Müşteri kendi siparişini düzenleyebilir (iptal/miktar değişikliği)
                     || (request.resource.data.diff(resource.data).affectedKeys()
                           .hasOnly(['items', 'totalAmount', 'status', 'updatedAt']));
       allow delete: if isAdmin();
     }
     match /notifications/{notifId} {
-      allow read:   if hasAnyRole(['kitchen', 'waiter', 'cashier', 'admin']);
-      allow create: if hasAnyRole(['kitchen', 'waiter', 'cashier', 'admin']) || true; // müşteri sipariş değişikliği bildirimi gönderebilir
-      allow update: if hasAnyRole(['kitchen', 'waiter', 'cashier', 'admin']);
+      allow read:   if hasAnyRole(['kitchen', 'waiter', 'waiter_ladies', 'cashier', 'cashier_ladies', 'admin']);
+      allow create: if hasAnyRole(['kitchen', 'waiter', 'waiter_ladies', 'cashier', 'cashier_ladies', 'admin']) || true; // müşteri sipariş değişikliği bildirimi gönderebilir
+      allow update: if hasAnyRole(['kitchen', 'waiter', 'waiter_ladies', 'cashier', 'cashier_ladies', 'admin']);
       allow delete: if isAdmin();
     }
 
@@ -119,11 +139,18 @@ service cloud.firestore {
 
     // ── Kasa veresiye hesapları ────────────────────────────────────────────
     match /cashDebts/{debtId} {
-      allow read, create, update: if hasAnyRole(['cashier', 'admin']);
+      allow read: if isAdmin() || hasRole('cashier')
+                  || (hasRole('cashier_ladies') && resource.data.get('tableSection', '') == 'ladies');
+      allow create: if isAdmin() || hasRole('cashier')
+                    || (hasRole('cashier_ladies') && request.resource.data.get('tableSection', '') == 'ladies');
+      allow update: if isAdmin() || hasRole('cashier')
+                    || (hasRole('cashier_ladies') && resource.data.get('tableSection', '') == 'ladies');
       allow delete: if isAdmin();
 
       match /payments/{paymentId} {
-        allow read, create: if hasAnyRole(['cashier', 'admin']);
+        allow read, create: if hasRole('admin') || hasRole('cashier')
+                            || (hasRole('cashier_ladies')
+                                && get(/databases/$(database)/documents/cashDebts/$(debtId)).data.get('tableSection', '') == 'ladies');
         allow update, delete: if isAdmin();
       }
     }

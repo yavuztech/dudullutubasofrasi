@@ -94,12 +94,16 @@ gerçek Firebase config değerleriyle değiştir (push bildirimlerin arka planda
 
 ## Rol Sistemi
 
-| Rol       | Yetkiler                                                    |
-|-----------|-------------------------------------------------------------|
-| `admin`   | Tüm paneller + personel yönetimi + masa/QR yönetimi         |
-| `kitchen` | Sipariş kuyruğu, ürün yönetimi, masa kapama/ödeme           |
-| `waiter`  | Bildirimler, masa temizleme                                  |
-| Müşteri   | Kayıt gerekmez — QR okutarak menü/sipariş + Gel Al          |
+| Rol              | Yetkiler                                                                                 |
+|------------------|------------------------------------------------------------------------------------------|
+| `admin`          | Tüm paneller + personel yönetimi + masa/QR yönetimi                                      |
+| `kitchen`        | Sipariş kuyruğu, ürün ve kategori yönetimi                                                |
+| `waiter`         | Masalar (Normal & Aile), bildirimler, sipariş alma, masa aktarma/birleştirme/bölme        |
+| `waiter_ladies`  | Hanım Kafeteryası masaları, hanım siparişleri alma, hanım bildirimleri                   |
+| `cashier`        | Tüm masalar (Normal, Aile, Hanım) ve Gel Al kasası, hesap kapama, fiş yazdır, açık hesap |
+| `cashier_ladies` | Sadece Hanım Kafeteryası masalarını görme ve hesap kapatma                               |
+| `clothing`       | Giyim bölümü kasası ve satış yönetimi                                                    |
+| Müşteri          | Kayıt gerekmez — QR okutarak menü/sipariş + Gel Al                                       |
 
 ---
 
@@ -111,9 +115,8 @@ gerçek Firebase config değerleriyle değiştir (push bildirimlerin arka planda
 3. (İlk defa) Bildirim izni istenir
 4. Mutfak siparişi görür → "Hazırlamaya Başla" → "Hazır!"
 5. Garson'a bildirim + titreşim (Masa X hazır!)
-6. Garson masaya götürür
-7. Mutfak "Ödeme Al & Kapat" → Garson'a temizleme bildirimi
-8. Garson masayı temizler → Masa 'available' duruma geçer
+6. Garson masaya teslim eder
+7. Kasa "Hesabı Kapat" dediğinde onay uyarısında "Fiş Yazdır ve Kapat" veya "Kapat" seçeneği sunulur. Masa 'available' duruma geçer.
 
 ### Gel Al Siparişi
 1. Müşteri `/order` adresine gider
@@ -122,9 +125,7 @@ gerçek Firebase config değerleriyle değiştir (push bildirimlerin arka planda
 4. Mutfak "Hazır!" → Müşteri cihazına **bildirim + titreşim** gönderilir
 5. Müşteri gelip alır
 
-### Yoğun Dönem Kenar Durumu
-- Masa kapandıktan (temizlenmeden) yeni müşteri oturur → QR ile sipariş verir
-- Sistem garsona otomatik "Masa X temizlenmemiş" bildirimi gönderir
+Hesap kapandığında masa doğrudan boş duruma geçer. Bir masa doluyken veya boşken garson/personel **Masayı Böl** ile kapasiteyi alt masalara (ör. Masa 1_1, Masa 1_2 veya H-1_1, H-1_2) ayırıp her gruba ayrı hesap açabilir. Alt masalar boşaldığında **Bölünmeyi Kaldır** ile masa birleştirilebilir.
 
 ---
 

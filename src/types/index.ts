@@ -2,7 +2,14 @@
 //  Domain types for Dudullu Tuba Sofrası
 // ─────────────────────────────────────────────
 
-export type UserRole = 'admin' | 'kitchen' | 'waiter' | 'cashier' | 'clothing';
+export type UserRole =
+  | 'admin'
+  | 'kitchen'
+  | 'waiter'
+  | 'waiter_ladies'
+  | 'cashier'
+  | 'cashier_ladies'
+  | 'clothing';
 
 export interface StaffUser {
   uid: string;
@@ -15,12 +22,10 @@ export interface StaffUser {
 
 // ─── Table ──────────────────────────────────
 export type TableStatus =
-  | 'available'        // boş, temiz
-  | 'occupied'         // müşteri var, sipariş var
-  | 'needs_cleaning'   // masa kapandı, temizlenmeli
-  | 'being_cleaned';   // garson temizliyor
+  | 'available'        // boş
+  | 'occupied';        // müşteri var, sipariş var
 
-export type TableSection = 'normal' | 'family';
+export type TableSection = 'normal' | 'family' | 'ladies';
 
 export interface Table {
   id: string;
@@ -32,6 +37,10 @@ export interface Table {
   sessionId: string; // changes on every new customer visit (payment collected)
   updatedAt: Date;
   section?: TableSection; // undefined = 'normal' (geriye dönük uyumlu)
+  displayName?: string;
+  originalCapacity?: number;
+  parentTableId?: string;
+  splitGroupIds?: string[];
   // Fiziksel masa birleştirme
   mergedTableIds?: string[];     // Bu masaya eklenen masaların ID'leri (primary masada)
   mergedTableNumbers?: number[]; // Görüntülemek için numara listesi (primary masada)
@@ -108,8 +117,10 @@ export interface Order {
   type: OrderType;
   tableId?: string;
   tableNumber?: number;
+  tableLabel?: string;
   items: OrderItem[];
   status: OrderStatus;
+  tableSection?: TableSection;
   kitchenPrintRequestId?: string;
   kitchenPrintHandled?: Record<string, string>;
   paymentStatus?: 'paid' | 'credit';
@@ -133,6 +144,7 @@ export interface CashDebt {
   customerName: string;
   tableId: string;
   tableLabel: string;
+  tableSection?: TableSection;
   orderIds: string[];
   items: OrderItem[];
   subtotal?: number;
@@ -149,12 +161,11 @@ export interface NotificationRecord {
   id: string;
   type:
     | 'order_ready_waiter'
-    | 'order_ready_customer'
-    | 'table_needs_cleaning'
-    | 'table_cleaned';
+    | 'order_ready_customer';
   orderId?: string;
   tableId?: string;
   tableNumber?: number;
+  tableLabel?: string;
   message: string;
   sentAt: Date;
   read: boolean;
@@ -168,7 +179,6 @@ export interface GelAlSettings {
   whatsappNumber: string;
   staffDiscount: boolean;       // Personel indirimi aktif mi
   staffDiscountRate: number;    // 0-100 arası yüzde
-  enableTableCleaning: boolean; // Masa temizleme işi gösterilsin mi (garson ekranında)
 }
 
 // ─── Printer Settings (Firestore: settings/printer-config) ───

@@ -63,13 +63,17 @@ async function sendPush(
 
 // ─── Helper: get all FCM tokens for a role ─────────────────────────────────
 async function getTokensForRole(role: string): Promise<string[]> {
-  const snap = await db
-    .collection('staff')
-    .where('role', 'in', role === 'kitchen_waiter' ? ['kitchen', 'waiter'] : [role])
-    .get();
-  return snap.docs
-    .map((d) => d.data().fcmToken as string | undefined)
-    .filter((t): t is string => !!t);
+  const roles = role === 'kitchen_waiter' ? ['kitchen', 'waiter'] : [role];
+  const snapshots = await Promise.all(roles.flatMap((staffRole) => [
+    db.collection('staff').where('roles', 'array-contains', staffRole).get(),
+    db.collection('staff').where('role', '==', staffRole).get(),
+  ]));
+  const tokens = new Set<string>();
+  snapshots.forEach((snapshot) => snapshot.docs.forEach((staffDoc) => {
+    const token = staffDoc.data().fcmToken;
+    if (typeof token === 'string' && token) tokens.add(token);
+  }));
+  return [...tokens];
 }
 
 // ─── Trigger: Order status changes ─────────────────────────────────────────
@@ -89,8 +93,9 @@ export const onOrderStatusChanged = onDocumentUpdated(
     if (after.status === 'ready') {
       if (orderType === 'table') {
         // Notify waiters
-        const waiterTokens = await getTokensForRole('waiter');
-        const msg = `Masa ${tableNum} siparişi hazır! 🔔`;
+        const waiterRole = after.tableSection === 'ladies' ? 'waiter_ladies' : 'waiter';
+        const waiterTokens = await getTokensForRole(waiterRole);
+        const msg = `${after.tableLabel || `Masa ${tableNum}`} siparişi hazır! 🔔`;
         await Promise.all(waiterTokens.map((t) => sendPush(t, 'Sipariş Hazır', msg, { type: 'order_ready', orderId })));
         logger.info(`Notified ${waiterTokens.length} waiters for table ${tableNum}`);
       }
@@ -117,7 +122,7 @@ export const onOrderStatusChanged = onDocumentUpdated(
         await sendPush(
           customerToken,
           '🍽️ Siparişiniz Geliyor',
-          `Masa ${tableNum} siparişiniz hazırlandı, garsonumuz getiriyor.`,
+          `${after.tableLabel || `Masa ${tableNum}`} siparişiniz hazırlandı, garsonumuz getiriyor.`,
           { type: 'order_coming', orderId }
         );
       }

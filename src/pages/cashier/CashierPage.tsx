@@ -8,6 +8,7 @@ import { useTableStore } from '../../stores/tableStore';
 import { useProductStore } from '../../stores/productStore';
 import { useDebtStore } from '../../stores/debtStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useAuthStore } from '../../stores/authStore';
 import {
   Banknote, CreditCard, LayoutGrid, Package, X, CheckCircle,
   Plus, Minus, Trash2, BadgePercent, ShoppingCart, ArrowLeftRight, Printer,
@@ -46,6 +47,8 @@ export default function CashierPage() {
   const { tables, subscribe, newSession } = useTableStore();
   const { products, categories, subscribe: subProducts, subscribeCategories } = useProductStore();
   const { settings, subscribe: subSettings } = useSettingsStore();
+  const { user } = useAuthStore();
+  const cashierLadiesOnly = !!user?.roles.includes('cashier_ladies') && !user.roles.includes('cashier') && !user.roles.includes('admin');
   const { debts, loading: debtsLoading, subscribe: subscribeDebts, createTableDebt, recordPayment } = useDebtStore();
 
   const [tab, setTab] = useState<Tab>('tables');
@@ -62,7 +65,10 @@ export default function CashierPage() {
   const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>({});
   const [payingDebtId, setPayingDebtId] = useState<string | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [closeAfterPrint, setCloseAfterPrint] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null); // takeaway fiş
+  const [confirmCloseTakeaway, setConfirmCloseTakeaway] = useState<{ order: Order; finalAmount?: number } | null>(null);
+  const [closeTakeawayAfterPrint, setCloseTakeawayAfterPrint] = useState(false);
 
   // Discount
   const [applyDiscount, setApplyDiscount] = useState(false);
@@ -92,23 +98,53 @@ export default function CashierPage() {
     const u2 = subProducts();
     const u3 = subscribeCategories();
     const u4 = subSettings();
-    const u5 = subscribeDebts();
+    const u5 = subscribeDebts(cashierLadiesOnly ? 'ladies' : undefined);
     return () => { u1(); u2(); u3(); u4(); u5(); };
-  }, []);
+  }, [cashierLadiesOnly, subscribe, subProducts, subscribeCategories, subSettings, subscribeDebts]);
 
   useEffect(() => {
+    const filters = [
+      where('type', '==', 'table'),
+      where('status', 'in', ['pending', 'preparing', 'ready', 'delivered']),
+    ];
+    if (cashierLadiesOnly) filters.push(where('tableSection', '==', 'ladies'));
     return onSnapshot(
-      query(collection(db, 'orders'), where('type', '==', 'table'), where('status', 'in', ['pending', 'preparing', 'ready', 'delivered'])),
+      query(collection(db, 'orders'), ...filters),
       (snap) => setActiveTableOrders(snap.docs.map((d) => ({ ...(d.data() as Omit<Order, 'id' | 'createdAt' | 'updatedAt'>), id: d.id, createdAt: toDate(d.data().createdAt), updatedAt: toDate(d.data().updatedAt) } as Order)))
     );
-  }, []);
+  }, [cashierLadiesOnly]);
 
   useEffect(() => {
+    if (cashierLadiesOnly) return;
+    const legacyOrders = activeTableOrders.filter((order) => !order.tableSection && order.tableId);
+    if (legacyOrders.length === 0) return;
+
+    const migrations = legacyOrders.flatMap((order) => {
+      const table = tables.find((candidate) => candidate.id === order.tableId);
+      if (!table) return [];
+      return [updateDoc(doc(db, 'orders', order.id), {
+        tableSection: table.section ?? 'normal',
+        tableLabel: getTableDisplayName(table),
+        updatedAt: serverTimestamp(),
+      })];
+    });
+    if (migrations.length > 0) {
+      Promise.all(migrations).catch((error) => {
+        console.error('Mevcut siparişlerin masa bölümü bilgisi güncellenemedi:', error);
+      });
+    }
+  }, [activeTableOrders, tables, cashierLadiesOnly]);
+
+  useEffect(() => {
+    if (cashierLadiesOnly) {
+      setTakeawayOrders([]);
+      return;
+    }
     return onSnapshot(
       query(collection(db, 'orders'), where('type', '==', 'takeaway'), where('status', 'in', ['pending', 'preparing', 'ready', 'delivered'])),
       (snap) => setTakeawayOrders(snap.docs.map((d) => ({ ...(d.data() as Omit<Order, 'id' | 'createdAt' | 'updatedAt'>), id: d.id, createdAt: toDate(d.data().createdAt), updatedAt: toDate(d.data().updatedAt) } as Order)).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()))
     );
-  }, []);
+  }, [cashierLadiesOnly]);
 
   const bills = useMemo((): Bill[] => {
     const map = new Map<string, Order[]>();
@@ -208,6 +244,8 @@ export default function CashierPage() {
         type: 'table',
         tableId: selectedBill.table.id,
         tableNumber: selectedBill.table.number,
+        tableLabel: tableLabel(selectedBill.table),
+        tableSection: selectedBill.table.section ?? 'normal',
         sessionId: selectedBill.sessionId ?? selectedBill.table.sessionId,
         items: addCart,
         totalAmount: cartTotal,
@@ -271,16 +309,16 @@ export default function CashierPage() {
       })));
       await newSession(selectedBill.table.id);
       await updateDoc(doc(db, 'tables', selectedBill.table.id), {
-        status: 'needs_cleaning',
+        status: 'available',
         mergedTableIds: [],
         mergedTableNumbers: [],
         updatedAt: serverTimestamp(),
       });
-      // Birleşik masaları da temizlemeye al
+      // Birleşik masaları da boşa al
       if (selectedBill.table.mergedTableIds?.length) {
         await Promise.all(selectedBill.table.mergedTableIds.map((id) =>
           updateDoc(doc(db, 'tables', id), {
-            status: 'needs_cleaning',
+            status: 'available',
             mergedIntoId: null,
             updatedAt: serverTimestamp(),
           }),
@@ -307,6 +345,7 @@ export default function CashierPage() {
         customerName,
         tableId: creditBill.table.id,
         tableLabel: tableLabel(creditBill.table),
+        tableSection: creditBill.table.section ?? 'normal',
         orderIds: creditBill.orders.map((order) => order.id),
         items: creditBill.orders.flatMap((order) => order.items),
         subtotal: creditBill.total,
@@ -381,9 +420,9 @@ export default function CashierPage() {
       // Yeni session başlat
       await newSession(bill.table.id);
       
-      // Masayı temizlemeye al
+      // Masayı boşa al
       await updateDoc(doc(db, 'tables', bill.table.id), {
-        status: 'needs_cleaning',
+        status: 'available',
         mergedTableIds: [],
         mergedTableNumbers: [],
         updatedAt: serverTimestamp(),
@@ -393,7 +432,7 @@ export default function CashierPage() {
       if (bill.table.mergedTableIds?.length) {
         await Promise.all(bill.table.mergedTableIds.map((id) =>
           updateDoc(doc(db, 'tables', id), {
-            status: 'needs_cleaning',
+            status: 'available',
             mergedIntoId: null,
             updatedAt: serverTimestamp(),
           }),
@@ -448,6 +487,7 @@ export default function CashierPage() {
   // Section bazlı gruplama
   const normalBills = bills.filter((b) => !b.table.section || b.table.section === 'normal');
   const familyBills = bills.filter((b) => b.table.section === 'family');
+  const ladiesBills = bills.filter((b) => b.table.section === 'ladies');
   const filteredDebts = debts.filter((debt) => {
     const search = debtSearch.trim().toLocaleLowerCase('tr-TR');
     return !search
@@ -462,20 +502,20 @@ export default function CashierPage() {
       <div className="flex gap-2 mb-5">
         <button onClick={() => setTab('tables')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'tables' ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
           <LayoutGrid className="w-4 h-4" />Masalar
-          {bills.length > 0 && <span className={`text-xs rounded-full px-1.5 ${tab === 'tables' ? 'bg-white/25 text-white' : 'bg-brand-100 text-brand-700'}`}>{bills.length}</span>}
+          {(cashierLadiesOnly ? ladiesBills.length : bills.length) > 0 && <span className={`text-xs rounded-full px-1.5 ${tab === 'tables' ? 'bg-white/25 text-white' : 'bg-brand-100 text-brand-700'}`}>{cashierLadiesOnly ? ladiesBills.length : bills.length}</span>}
         </button>
-        <button onClick={() => setTab('takeaway')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'takeaway' ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+        {!cashierLadiesOnly && <button onClick={() => setTab('takeaway')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'takeaway' ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
           <Package className="w-4 h-4" />Gel Al
           {takeawayOrders.length > 0 && <span className={`text-xs rounded-full px-1.5 ${tab === 'takeaway' ? 'bg-white/25 text-white' : 'bg-brand-100 text-brand-700'}`}>{takeawayOrders.length}</span>}
-        </button>
-        <button onClick={() => setTab('debts')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'debts' ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+        </button>}
+        {!cashierLadiesOnly && <button onClick={() => setTab('debts')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'debts' ? 'bg-brand-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
           <Banknote className="w-4 h-4" />Açık Hesap
           {debts.filter((debt) => debt.status === 'open').length > 0 && (
             <span className={`text-xs rounded-full px-1.5 ${tab === 'debts' ? 'bg-white/25 text-white' : 'bg-orange-100 text-orange-700'}`}>
               {debts.filter((debt) => debt.status === 'open').length}
             </span>
           )}
-        </button>
+        </button>}
       </div>
 
       {/* Masalar */}
@@ -528,6 +568,28 @@ export default function CashierPage() {
                     </button>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* Hanım Kafeteryası */}
+          {ladiesBills.length > 0 && (
+            <div>
+              <h3 className="text-sm font-bold text-pink-600 uppercase tracking-wider mb-3 flex items-center gap-2">
+                HANIM KAFETERYASI ({ladiesBills.length})
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {ladiesBills.map((bill) => (
+                  <button key={bill.key} onClick={() => openBill(bill)} className="card flex flex-col gap-2 text-left hover:border-pink-300 hover:shadow-md transition-all active:scale-[0.98] border-pink-100">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-gray-900 text-base">{tableLabel(bill.table)}</span>
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-pink-100 text-pink-700">H</span>
+                    </div>
+                    <p className="text-xs text-gray-400">{bill.orders.length} sipariş</p>
+                    <p className="font-bold text-brand-600">{formatCurrency(bill.total)}</p>
+                    <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full self-start">Hesap açık</span>
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -689,8 +751,8 @@ export default function CashierPage() {
                       >
                         <Printer className="w-4 h-4" />
                       </button>
-                      <button onClick={() => closeTakeawayBill(order.id, hasTwDiscount ? twFinalAmount : undefined)} disabled={closingId === order.id} className="btn-primary py-2 px-4 text-sm flex items-center gap-1.5 disabled:opacity-50">
-                        <CreditCard className="w-4 h-4" />{closingId === order.id ? 'İşleniyor…' : 'Ödendi'}
+                      <button onClick={() => setConfirmCloseTakeaway({ order, finalAmount: hasTwDiscount ? twFinalAmount : undefined })} disabled={closingId === order.id} className="btn-primary py-2 px-4 text-sm flex items-center gap-1.5 disabled:opacity-50">
+                        <CreditCard className="w-4 h-4" />{closingId === order.id ? 'İşleniyor…' : 'Hesabı Kapat'}
                       </button>
                     </div>
                   </div>
@@ -1009,7 +1071,15 @@ export default function CashierPage() {
           orders={selectedBill.orders}
           discountRate={discountRate}
           discountApplied={applyDiscount && !!settings.staffDiscount}
-          onClose={() => setShowReceipt(false)}
+          onClose={() => {
+            setShowReceipt(false);
+            setCloseAfterPrint(false);
+          }}
+          onPrinted={closeAfterPrint ? () => {
+            setCloseAfterPrint(false);
+            setShowReceipt(false);
+            void closeTableBill();
+          } : undefined}
         />
       )}
 
@@ -1207,7 +1277,7 @@ export default function CashierPage() {
                   <strong>{tableLabel(cancelBillConfirm.table)}</strong> hesabı iptal edilecek.
                 </p>
                 <p className="text-sm text-gray-500 mt-2">
-                  Tüm siparişler iptal edilecek ve masa temizlemeye alınacak. Ödeme alınmayacak. Bu işlem geri alınamaz.
+                  Tüm siparişler iptal edilecek ve masa boşa alınacak. Ödeme alınmayacak. Bu işlem geri alınamaz.
                 </p>
               </div>
             </div>
@@ -1236,11 +1306,11 @@ export default function CashierPage() {
             onClick={() => !closingId && setConfirmCloseBill(false)}
           />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <h3 className="font-bold text-gray-900 text-lg">Hesabı kapatmak istiyor musunuz?</h3>
+            <h3 className="font-bold text-gray-900 text-lg">Emin misiniz? Hesap kapatılsın mı?</h3>
             <p className="text-sm text-gray-600 mt-2">
-              <strong>{tableLabel(selectedBill.table)}</strong> hesabındaki {formatCurrency(finalTotal)} tutarındaki ödeme alınmış olarak işaretlenecek ve masa temizlemeye alınacak.
+              <strong>{tableLabel(selectedBill.table)}</strong> hesabındaki {formatCurrency(finalTotal)} tutarındaki hesap kapatılacak.
             </p>
-            <div className="flex gap-3 mt-5">
+            <div className="flex flex-col sm:flex-row gap-3 mt-5">
               <button
                 onClick={() => setConfirmCloseBill(false)}
                 disabled={!!closingId}
@@ -1251,12 +1321,23 @@ export default function CashierPage() {
               <button
                 onClick={() => {
                   setConfirmCloseBill(false);
+                  setCloseAfterPrint(true);
+                  setShowReceipt(true);
+                }}
+                disabled={!!closingId}
+                className="btn-secondary flex-1 disabled:opacity-50"
+              >
+                Fiş Yazdır ve Kapat
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmCloseBill(false);
                   void closeTableBill();
                 }}
                 disabled={!!closingId}
                 className="btn-primary flex-1 disabled:opacity-50"
               >
-                {closingId ? 'İşleniyor…' : 'Evet, hesabı kapat'}
+                {closingId ? 'İşleniyor…' : 'Kapat'}
               </button>
             </div>
           </div>
@@ -1329,7 +1410,7 @@ export default function CashierPage() {
               </div>
             </div>
             <p className="text-xs text-gray-500 mt-3">
-              Masa kapatılıp temizlemeye alınır. Borç Açık Hesaplar bölümünde görünür; sonradan kısmi veya tam tahsilat kaydedebilirsiniz.
+              Masa boşa alınır. Borç Açık Hesaplar bölümünde görünür; sonradan kısmi veya tam tahsilat kaydedebilirsiniz.
             </p>
             <div className="flex gap-3 mt-5">
               <button
@@ -1352,6 +1433,53 @@ export default function CashierPage() {
         </div>
       )}
 
+      {confirmCloseTakeaway && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => !closingId && setConfirmCloseTakeaway(null)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="font-bold text-gray-900 text-lg">Emin misiniz? Hesap kapatılsın mı?</h3>
+            <p className="text-sm text-gray-600 mt-2">
+              <strong>{confirmCloseTakeaway.order.customerName || 'Gel Al Siparişi'}</strong> hesabındaki {formatCurrency(confirmCloseTakeaway.finalAmount ?? confirmCloseTakeaway.order.totalAmount)} tutarındaki paket sipariş kapatılacak.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 mt-5">
+              <button
+                onClick={() => setConfirmCloseTakeaway(null)}
+                disabled={!!closingId}
+                className="btn-secondary flex-1"
+              >
+                Vazgeç
+              </button>
+              <button
+                onClick={() => {
+                  const target = confirmCloseTakeaway;
+                  setConfirmCloseTakeaway(null);
+                  setCloseTakeawayAfterPrint(true);
+                  setReceiptOrder(target.order);
+                }}
+                disabled={!!closingId}
+                className="btn-secondary flex-1 disabled:opacity-50"
+              >
+                Fiş Yazdır ve Kapat
+              </button>
+              <button
+                onClick={async () => {
+                  const target = confirmCloseTakeaway;
+                  setConfirmCloseTakeaway(null);
+                  await closeTakeawayBill(target.order.id, target.finalAmount);
+                }}
+                disabled={!!closingId}
+                className="btn-primary flex-1 disabled:opacity-50"
+              >
+                {closingId ? 'İşleniyor…' : 'Kapat'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {receiptOrder && (
         <ReceiptModal
           customerName={receiptOrder.customerName}
@@ -1359,7 +1487,18 @@ export default function CashierPage() {
           orders={[receiptOrder]}
           discountRate={discountRate}
           discountApplied={twDiscountOrders.has(receiptOrder.id) && !!settings.staffDiscount}
-          onClose={() => setReceiptOrder(null)}
+          onClose={() => {
+            setReceiptOrder(null);
+            setCloseTakeawayAfterPrint(false);
+          }}
+          onPrinted={closeTakeawayAfterPrint ? async () => {
+            const order = receiptOrder;
+            setCloseTakeawayAfterPrint(false);
+            setReceiptOrder(null);
+            const hasTwDiscount = twDiscountOrders.has(order.id) && !!settings.staffDiscount;
+            const twFinalAmount = hasTwDiscount ? Math.round(order.totalAmount * (1 - discountRate / 100)) : undefined;
+            await closeTakeawayBill(order.id, twFinalAmount);
+          } : undefined}
         />
       )}
     </div>

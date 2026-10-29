@@ -26,9 +26,14 @@ Restoranlar ve kafeler için modern, gerçek zamanlı sipariş yönetim sistemi.
 ### 💳 Kasa Paneli
 - Hesapları müşteri adına açık/veresiye olarak kapatma
 - Kısmi veya tam tahsilat kaydı ve kalan borç takibi
-- Masa hesabını kapatıp masayı temizlemeye alma; müşteri adıyla borç kaydı tutma
+- Masa hesabını kapatınca masayı hemen boş duruma alma
+- Hesabı onaylarken fiş yazdırıp kapatma veya fişsiz kapatma
 
-Kasa > **Masalar** bölümünde hesabı açıp **Açık Hesap** seçin ve müşteri adını girin. Borç kaydedilince masa kapanır ve temizlemeye alınır. Daha sonraki ödemeler Kasa > **Açık Hesaplar** bölümünden müşteri adına bulunup kısmi veya tam tahsilat olarak kaydedilebilir. Vade tarihi alınmaz.
+Kasa > **Masalar** bölümünde hesabı açıp **Açık Hesap** seçin ve müşteri adını girin. Borç kaydedilince masa boş duruma geçer. Daha sonraki ödemeler Kasa > **Açık Hesaplar** bölümünden müşteri adına bulunup kısmi veya tam tahsilat olarak kaydedilebilir. Vade tarihi alınmaz.
+
+Hanım Kafeteryası için Admin > **Masalar** bölümünden `H-1`, `H-2` gibi masa ekleyin; Admin > **Personel** bölümünde kullanıcıya **Hanım Kafeteryası Garsonu** ve/veya **Hanım Kafeteryası Kasası** rolü verin. Bu roller yalnızca Hanım Kafeteryası masalarını ve hesaplarını görür. Normal kasa tüm masa bölümlerini görür.
+
+Garson, dolu bir fiziksel masayı **Masayı Böl** ile kapasiteyi aşmadan birden fazla bağımsız alt masaya ayırabilir. Örneğin 4 kişilik Masa 1, kapasite dağılımına göre `Masa 1_1` ve `Masa 1_2` olarak ayrı sipariş ve hesaplarla kullanılabilir.
 
 ### 🔐 Admin Paneli
 - Siparişler (tüm siparişleri yönet)
