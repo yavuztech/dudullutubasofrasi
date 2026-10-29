@@ -94,12 +94,15 @@ export default function AdminSettings() {
       }));
       toast.success(`${KITCHEN_STATIONS.find((station) => station.id === stationId)?.label} Bridge bağlantısı başarılı.`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Bridge servise bağlanılamadı.';
+      let message = error instanceof Error ? error.message : 'Bridge servise bağlanılamadı.';
+      if (window.location.protocol === 'https:' && bridgeUrl.startsWith('http://')) {
+        message = 'Tarayıcınız HTTPS (canlı site) üzerinden yerel HTTP servisine (http://localhost:3001) doğrudan erişimi engelliyor (Mixed Content). Ayarları kaydedebilirsiniz; Bridge servisi Firestore üzerinden arka planda otomatik çalışmaya devam eder.';
+      }
       setBridgeChecks((previous) => ({
         ...previous,
         [stationId]: { status: 'error', message },
       }));
-      toast.error(message);
+      toast.error(message, { duration: 6000 });
     } finally {
       setTestingStation(null);
     }

@@ -147,7 +147,11 @@ export default function ReceiptModal({ tableNumber, tableLabel, customerName, cu
       onPrinted?.();
     } catch (error) {
       console.error('Kasa fişi yazdırılamadı:', error);
-      toast.error(error instanceof Error ? error.message : 'Kasa fişi yazdırılamadı.');
+      let msg = error instanceof Error ? error.message : 'Kasa fişi yazdırılamadı.';
+      if (window.location.protocol === 'https:' && cashierBridgeUrl.startsWith('http://')) {
+        msg = 'Tarayıcı HTTPS sayfasından yerel HTTP servisine (http://localhost:3001) doğrudan erişimi engelledi. Kasa bilgisayarında tarayıcı adres çubuğundaki kilit ikonundan "Güvensiz içerik" izni verebilirsiniz.';
+      }
+      toast.error(msg, { duration: 6000 });
     } finally {
       setPrinting(false);
     }
