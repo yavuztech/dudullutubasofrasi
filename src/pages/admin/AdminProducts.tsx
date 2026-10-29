@@ -12,6 +12,7 @@ const KITCHEN_STATIONS = [
   { value: 'station2', label: 'Izgara' },
   { value: 'station3', label: 'Kasa (manuel fiş)' },
   { value: 'station4', label: 'Burger' },
+  { value: 'station5', label: 'Tatlı' },
 ] as const;
 
 export default function AdminProducts() {

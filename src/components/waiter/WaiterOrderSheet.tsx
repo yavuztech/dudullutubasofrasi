@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { X, Plus, Minus, ShoppingCart, Send, ChefHat, ClipboardList, Trash2 } from 'lucide-react';
+import { X, Plus, Minus, ShoppingCart, Send, ChefHat, ClipboardList, Trash2, Search, Package } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { onSnapshot, collection, query, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
@@ -37,7 +37,8 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
 
   const [tab, setTab] = useState<Tab>('new');
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [activeCategory, setActiveCategory] = useState<string>(categories[0]?.id ?? '');
+  const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [confirmSend, setConfirmSend] = useState(false);
   const [reprintConfirmOrder, setReprintConfirmOrder] = useState<Order | null>(null);
@@ -72,23 +73,28 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
   }, [table.id, table.sessionId]);
 
   const available = products.filter((p) => p.available);
-  const grouped = useMemo(() => {
-    const map: Record<string, typeof products> = {};
-    for (const p of available) {
-      if (!map[p.category]) map[p.category] = [];
-      map[p.category].push(p);
-    }
-    return map;
-  }, [available]);
+  const filteredProducts = useMemo(() => {
+    const queryText = searchQuery.trim().toLocaleLowerCase('tr-TR');
+    return available.filter((p) => {
+      const matchCategory = !activeCategory || activeCategory === 'all' || p.category === activeCategory;
+      const matchSearch = !queryText || p.name.toLocaleLowerCase('tr-TR').includes(queryText);
+      return matchCategory && matchSearch;
+    });
+  }, [available, activeCategory, searchQuery]);
 
   // ── New order ──────────────────────────────────────────────────────────────
   const qty = (productId: string) => cart.find((i) => i.productId === productId)?.quantity ?? 0;
+  const isItemTakeaway = (productId: string) => !!cart.find((i) => i.productId === productId)?.isTakeaway;
+
   const add = (product: (typeof products)[0]) => {
     setCart((prev) => {
       const ex = prev.find((i) => i.productId === product.id);
       if (ex) return prev.map((i) => i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...prev, { productId: product.id, productName: product.name, unitPrice: product.price, quantity: 1 }];
+      return [...prev, { productId: product.id, productName: product.name, unitPrice: product.price, quantity: 1, isTakeaway: false }];
     });
+  };
+  const toggleTakeaway = (productId: string) => {
+    setCart((prev) => prev.map((i) => i.productId === productId ? { ...i, isTakeaway: !i.isTakeaway } : i));
   };
   const removeFromCart = (productId: string) => {
     setCart((prev) => prev.map((i) => i.productId === productId ? { ...i, quantity: i.quantity - 1 } : i).filter((i) => i.quantity > 0));
@@ -115,6 +121,8 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
             productName: i.productName,
             quantity: i.quantity,
             unitPrice: i.unitPrice,
+            isTakeaway: !!i.isTakeaway,
+            notes: i.isTakeaway ? (i.notes ? `${i.notes} (Paket)` : '(Paket)') : i.notes,
           };
         }),
         status: 'pending',
@@ -224,34 +232,84 @@ export default function WaiterOrderSheet({ table, onClose }: Props) {
         {/* ── Yeni Sipariş tab ── */}
         {tab === 'new' && (
           <>
-            <div className="flex gap-1.5 px-4 py-2 overflow-x-auto no-scrollbar border-b border-gray-50 flex-shrink-0">
-              {categories.map((cat) => (
+            <div className="p-3 pb-2 border-b border-gray-100 flex flex-col gap-2 flex-shrink-0">
+              <div className="relative">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Ürün adı ara..."
+                  className="input pl-9 py-2 text-sm w-full"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs font-semibold">
+                    ✕
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
                 <button
-                  key={cat.id}
-                  onClick={() => setActiveCategory(cat.id)}
+                  onClick={() => setActiveCategory('all')}
                   className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
-                    activeCategory === cat.id ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600'
+                    activeCategory === 'all' ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600'
                   }`}
                 >
-                  {cat.name}
+                  Tümü
                 </button>
-              ))}
+                {categories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setActiveCategory(cat.id)}
+                    className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+                      activeCategory === cat.id ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
             </div>
+
             <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2">
-              {(grouped[activeCategory] ?? []).map((product) => {
+              {filteredProducts.length === 0 ? (
+                <div className="text-center py-8 text-gray-400 text-sm">
+                  Aranan kriterde ürün bulunamadı.
+                </div>
+              ) : filteredProducts.map((product) => {
                 const count = qty(product.id);
+                const isTakeaway = isItemTakeaway(product.id);
                 return (
                   <div key={product.id} className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
                     {product.imageUrl && (
                       <img src={product.imageUrl} alt={product.name} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-900 text-sm truncate">{product.name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-semibold text-gray-900 text-sm truncate">{product.name}</p>
+                        {count > 0 && isTakeaway && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 flex items-center gap-0.5">
+                            <Package className="w-2.5 h-2.5" /> (Paket)
+                          </span>
+                        )}
+                      </div>
                       <p className="text-brand-600 font-bold text-sm">{formatCurrency(product.price)}</p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {count > 0 ? (
                         <>
+                          <button
+                            onClick={() => toggleTakeaway(product.id)}
+                            className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 border transition-colors ${
+                              isTakeaway
+                                ? 'bg-orange-500 text-white border-orange-500 shadow-sm'
+                                : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                            }`}
+                            title="Paket sipariş olarak işaretle"
+                          >
+                            <Package className="w-3 h-3" />
+                            {isTakeaway ? 'Paket' : 'Masa'}
+                          </button>
                           <button onClick={() => removeFromCart(product.id)} className="w-8 h-8 rounded-xl border border-gray-200 flex items-center justify-center hover:bg-gray-50">
                             <Minus className="w-3.5 h-3.5 text-gray-600" />
                           </button>

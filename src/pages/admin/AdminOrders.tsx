@@ -49,6 +49,7 @@ export default function AdminOrders() {
   const to = customDate ? new Date(customDate + 'T23:59:59') : null;
 
   const filtered = orders.filter((o) => {
+    if (o.isTestOrder) return false;
     const matchStatus = statusFilter === 'all' || o.status === statusFilter;
     const matchDate = !from || (o.createdAt >= from && (!to || o.createdAt <= to));
     return matchStatus && matchDate;

@@ -63,15 +63,23 @@ export default function KitchenOrderCard({ order, onMarkReady, onMarkPreparing, 
 
       {/* Items */}
       <ul className="space-y-1 mb-4">
-        {order.items.map((item, i) => (
-          <li key={i} className="flex items-center justify-between text-sm">
-            <span className="text-gray-700">
-              <span className="font-bold text-gray-900 mr-1.5">{item.quantity}×</span>
-              {item.productName}
-            </span>
-            <span className="text-gray-500">{formatCurrency(item.unitPrice * item.quantity)}</span>
-          </li>
-        ))}
+        {order.items.map((item, i) => {
+          const isTakeaway = item.isTakeaway || item.notes?.includes('(Paket)') || item.productName?.includes('(Paket)');
+          return (
+            <li key={i} className="flex items-center justify-between text-sm">
+              <span className="text-gray-700 flex items-center gap-1.5">
+                <span className="font-bold text-gray-900">{item.quantity}×</span>
+                <span>{item.productName}</span>
+                {isTakeaway && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-800">
+                    (Paket)
+                  </span>
+                )}
+              </span>
+              <span className="text-gray-500">{formatCurrency(item.unitPrice * item.quantity)}</span>
+            </li>
+          );
+        })}
       </ul>
 
       {order.notes && (

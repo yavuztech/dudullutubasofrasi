@@ -25,8 +25,8 @@ export default function KitchenOrders() {
 
   // ── Active orders handlers ─────────────────────────────────────────────────
 
-  const tableOrders   = orders.filter((o) => o.type === 'table');
-  const takeawayOrders = orders.filter((o) => o.type === 'takeaway');
+  const tableOrders   = orders.filter((o) => o.type === 'table' && !o.isTestOrder);
+  const takeawayOrders = orders.filter((o) => o.type === 'takeaway' && !o.isTestOrder);
 
   const handleMarkPreparing = async (order: Order) => {
     setLoadingId(order.id);

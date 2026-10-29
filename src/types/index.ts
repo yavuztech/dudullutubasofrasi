@@ -70,7 +70,7 @@ export interface Category {
   name: string;
   sortOrder: number;
   department?: ProductDepartment; // undefined = 'food'
-  kitchenStation?: string;        // 'station1' Fırın | 'station2' Izgara | 'station3' Kasa | 'station4' Burger
+  kitchenStation?: string;        // 'station1' Fırın | 'station2' Izgara | 'station3' Kasa | 'station4' Burger | 'station5' Tatlı
 }
 
 // ─── Clothing Sale ──────────────────────────
@@ -109,6 +109,8 @@ export interface OrderItem {
   quantity: number;
   unitPrice: number;
   notes?: string;
+  isTakeaway?: boolean; // Masa siparişinde ürün bazlı paket sipariş (Paket)
+  kitchenStation?: string; // Doğrudan istasyon yönlendirmesi
 }
 
 export interface Order {
@@ -121,6 +123,7 @@ export interface Order {
   items: OrderItem[];
   status: OrderStatus;
   tableSection?: TableSection;
+  isTestOrder?: boolean; // Garson yazıcı testi siparişi
   kitchenPrintRequestId?: string;
   kitchenPrintHandled?: Record<string, string>;
   paymentStatus?: 'paid' | 'credit';
@@ -196,4 +199,5 @@ export interface CartItem {
   unitPrice: number;
   quantity: number;
   notes?: string;
+  isTakeaway?: boolean;
 }

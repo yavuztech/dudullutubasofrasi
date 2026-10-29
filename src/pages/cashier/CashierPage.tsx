@@ -146,14 +146,14 @@ export default function CashierPage({ mode }: Props = {}) {
   useEffect(() => {
     return onSnapshot(
       query(collection(db, 'orders'), where('type', '==', 'takeaway'), where('status', 'in', ['pending', 'preparing', 'ready', 'delivered'])),
-      (snap) => setTakeawayOrders(snap.docs.map((d) => ({ ...(d.data() as Omit<Order, 'id' | 'createdAt' | 'updatedAt'>), id: d.id, createdAt: toDate(d.data().createdAt), updatedAt: toDate(d.data().updatedAt) } as Order)).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()))
+      (snap) => setTakeawayOrders(snap.docs.map((d) => ({ ...(d.data() as Omit<Order, 'id' | 'createdAt' | 'updatedAt'>), id: d.id, createdAt: toDate(d.data().createdAt), updatedAt: toDate(d.data().updatedAt) } as Order)).filter((o) => !o.isTestOrder).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()))
     );
   }, []);
 
   const bills = useMemo((): Bill[] => {
     const map = new Map<string, Order[]>();
     for (const o of activeTableOrders) {
-      if (!o.tableId) continue;
+      if (!o.tableId || o.isTestOrder) continue;
       const key = `${o.tableId}__${o.sessionId ?? ''}`;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(o);

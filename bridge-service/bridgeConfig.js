@@ -1,4 +1,4 @@
-const STATIONS = ['station1', 'station2', 'station3', 'station4'];
+const STATIONS = ['station1', 'station2', 'station3', 'station4', 'station5'];
 
 function readBridgeConfig(env = process.env) {
   const station = env.BRIDGE_STATION || null;

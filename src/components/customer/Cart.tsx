@@ -1,4 +1,4 @@
-import { ShoppingCart, X, Minus, Plus, Trash2, MessageCircle } from 'lucide-react';
+import { ShoppingCart, X, Minus, Plus, Trash2, MessageCircle, Package } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import type { CartItem } from '../../types';
 
@@ -6,6 +6,7 @@ interface Props {
   items: CartItem[];
   onUpdate: (productId: string, delta: number) => void;
   onRemove: (productId: string) => void;
+  onToggleTakeaway?: (productId: string) => void;
   onClose: () => void;
   onCheckout?: () => void;
   onWhatsAppCheckout?: () => void;
@@ -16,6 +17,7 @@ export default function Cart({
   items,
   onUpdate,
   onRemove,
+  onToggleTakeaway,
   onClose,
   onCheckout,
   onWhatsAppCheckout,
@@ -50,12 +52,33 @@ export default function Cart({
             items.map((item) => (
               <div key={item.productId} className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm text-gray-900 truncate">{item.productName}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-medium text-sm text-gray-900 truncate">{item.productName}</p>
+                    {item.isTakeaway && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700">
+                        (Paket)
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-gray-500">
                     {formatCurrency(item.unitPrice)} × {item.quantity}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {onToggleTakeaway && (
+                    <button
+                      onClick={() => onToggleTakeaway(item.productId)}
+                      className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 border transition-colors ${
+                        item.isTakeaway
+                          ? 'bg-orange-500 text-white border-orange-500 shadow-sm'
+                          : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                      }`}
+                      title="Paket sipariş olarak işaretle"
+                    >
+                      <Package className="w-3 h-3" />
+                      {item.isTakeaway ? 'Paket' : 'Masa'}
+                    </button>
+                  )}
                   <button
                     onClick={() => onUpdate(item.productId, -1)}
                     className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50"

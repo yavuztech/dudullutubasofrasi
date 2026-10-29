@@ -12,7 +12,7 @@ test('requires a valid station and local printer queue for station-specific brid
     /PRINTER_NAME/,
   );
   assert.throws(
-    () => readBridgeConfig({ BRIDGE_STATION: 'station5', PRINTER_NAME: 'Kitchen' }),
+    () => readBridgeConfig({ BRIDGE_STATION: 'station99', PRINTER_NAME: 'Kitchen' }),
     /BRIDGE_STATION geçersiz/,
   );
   assert.deepEqual(
@@ -22,6 +22,10 @@ test('requires a valid station and local printer queue for station-specific brid
   assert.deepEqual(
     readBridgeConfig({ BRIDGE_STATION: 'station4', PRINTER_NAME: 'Burger_Printer' }),
     { station: 'station4', printerName: 'Burger_Printer' },
+  );
+  assert.deepEqual(
+    readBridgeConfig({ BRIDGE_STATION: 'station5', PRINTER_NAME: 'Dessert_Printer' }),
+    { station: 'station5', printerName: 'Dessert_Printer' },
   );
 });
 

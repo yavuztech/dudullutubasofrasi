@@ -135,6 +135,12 @@ export default function CustomerMenu() {
     );
   };
 
+  const toggleCartTakeaway = (productId: string) => {
+    setCart((prev) =>
+      prev.map((i) => (i.productId === productId ? { ...i, isTakeaway: !i.isTakeaway } : i))
+    );
+  };
+
   const removeFromCart = (productId: string) => {
     setCart((prev) => prev.filter((i) => i.productId !== productId));
   };
@@ -200,6 +206,8 @@ export default function CustomerMenu() {
             productName: i.productName,
             quantity: i.quantity,
             unitPrice: i.unitPrice,
+            isTakeaway: !!i.isTakeaway,
+            notes: i.isTakeaway ? (i.notes ? `${i.notes} (Paket)` : '(Paket)') : i.notes,
           };
         }),
         status: 'pending',
@@ -378,6 +386,7 @@ export default function CustomerMenu() {
           items={cart}
           onUpdate={updateCart}
           onRemove={removeFromCart}
+          onToggleTakeaway={toggleCartTakeaway}
           onClose={() => setCartOpen(false)}
           onCheckout={openConfirm}
           checkoutLoading={checkoutLoading}

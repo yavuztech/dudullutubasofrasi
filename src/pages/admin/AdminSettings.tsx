@@ -10,6 +10,7 @@ const KITCHEN_STATIONS = [
   { id: 'station2', label: 'Izgara' },
   { id: 'station3', label: 'Kasa' },
   { id: 'station4', label: 'Burger' },
+  { id: 'station5', label: 'Tatlı' },
 ];
 
 type BridgeCheck = {

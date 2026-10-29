@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { LayoutGrid, QrCode, X, Download, ClipboardList, ArrowLeftRight, Split, Plus, Minus } from 'lucide-react';
+import { LayoutGrid, QrCode, X, Download, ClipboardList, ArrowLeftRight, Split, Plus, Minus, Printer } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { useAuthStore } from '../../stores/authStore';
 import { useTableStore } from '../../stores/tableStore';
 import { useProductStore } from '../../stores/productStore';
 import WaiterOrderSheet from '../../components/waiter/WaiterOrderSheet';
 import TableTransferModal from '../../components/shared/TableTransferModal';
+import PrinterTestModal from '../../components/shared/PrinterTestModal';
 import { tableStatusColor, tableStatusLabel } from '../../utils/formatters';
 import { getTableDisplayName } from '../../utils/tableUtils';
 import type { Table } from '../../types';
@@ -47,12 +48,23 @@ export default function WaiterTables() {
   const familyTablesCount = visibleTables.filter((t) => t.section === 'family').length;
   const ladiesTablesCount = visibleTables.filter((t) => t.section === 'ladies').length;
 
+  const [showPrinterTest, setShowPrinterTest] = useState(false);
+
   return (
     <div className="p-4 sm:p-6">
-      <h2 className="flex items-center gap-2 font-bold text-gray-800 mb-4">
-        <LayoutGrid className="w-5 h-5 text-brand-600" />
-        Masa Durumu
-      </h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="flex items-center gap-2 font-bold text-gray-800">
+          <LayoutGrid className="w-5 h-5 text-brand-600" />
+          Masa Durumu
+        </h2>
+        <button
+          onClick={() => setShowPrinterTest(true)}
+          className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5"
+        >
+          <Printer className="w-4 h-4 text-brand-600" />
+          Yazıcı Testi
+        </button>
+      </div>
 
       {/* Tab Navigation */}
       {!ladiesOnly && (
@@ -309,6 +321,10 @@ export default function WaiterTables() {
             </div>
           </div>
         </div>
+      )}
+
+      {showPrinterTest && (
+        <PrinterTestModal onClose={() => setShowPrinterTest(false)} />
       )}
     </div>
   );

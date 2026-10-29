@@ -274,7 +274,7 @@ async function handleKitchenPrintRequest(order) {
 
   const stations = bridgeConfig.station
     ? [bridgeConfig.station]
-    : ['station1', 'station2', 'station4'];
+    : ['station1', 'station2', 'station4', 'station5'];
   const unhandledStations = getUnacknowledgedStations(order, stations);
   if (unhandledStations.length === 0) return;
 

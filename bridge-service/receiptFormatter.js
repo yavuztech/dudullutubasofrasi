@@ -85,7 +85,11 @@ function formatKitchenReceipt({ order, item, station, receiptNumber }) {
     lines.push('GEL-AL');
   }
   lines.push(getStationLabel(station), separator());
-  lines.push(...formatProduct(`${item.quantity}x ${item.productName}`));
+  const isTakeaway = item.isTakeaway || item.notes?.includes('(Paket)') || item.productName?.includes('(Paket)');
+  const itemTitle = isTakeaway
+    ? `${item.quantity}x ${item.productName} (PAKET)`
+    : `${item.quantity}x ${item.productName}`;
+  lines.push(...formatProduct(itemTitle));
   if (item.notes) lines.push(...wrapText(`Not: ${item.notes}`, WIDTH).map((line) => toPrinterText(line)));
   lines.push(
     separator(),
@@ -107,6 +111,7 @@ function getStationLabel(stationId) {
     station1: 'FIRIN',
     station2: 'IZGARA',
     station4: 'BURGER',
+    station5: 'TATLI',
   };
   return labels[stationId] || stationId.toUpperCase();
 }

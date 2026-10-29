@@ -168,12 +168,15 @@ export const useDebtStore = create<DebtStore>((set) => ({
         throw new Error('Borçla ilişkili siparişlerden biri bulunamadı; tahsilat kaydedilmedi.');
       }
 
-      transaction.update(debtRef, {
-        paidAmount: nextPaidCents / 100,
-        status: nextPaidCents >= totalCents ? 'paid' : 'open',
-        updatedAt: serverTimestamp(),
-        ...(nextPaidCents >= totalCents ? { paidAt: serverTimestamp() } : {}),
-      });
+      if (nextPaidCents >= totalCents) {
+        transaction.delete(debtRef);
+      } else {
+        transaction.update(debtRef, {
+          paidAmount: nextPaidCents / 100,
+          status: 'open',
+          updatedAt: serverTimestamp(),
+        });
+      }
       transaction.set(paymentRef, {
         amount: paymentCents / 100,
         createdAt: serverTimestamp(),
@@ -181,6 +184,7 @@ export const useDebtStore = create<DebtStore>((set) => ({
       orderRefs.forEach((orderRef) => {
         transaction.update(orderRef, {
           paymentStatus: 'paid',
+          status: 'paid',
           updatedAt: serverTimestamp(),
         });
       });

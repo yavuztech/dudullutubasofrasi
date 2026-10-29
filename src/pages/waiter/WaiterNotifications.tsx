@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Bell, Utensils, PackageCheck } from 'lucide-react';
+import { Bell, Utensils, PackageCheck, Printer } from 'lucide-react';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useOrderStore } from '../../stores/orderStore';
 import { vibrate } from '../../lib/notifications';
 import { formatTime } from '../../utils/formatters';
+import PrinterTestModal from '../../components/shared/PrinterTestModal';
 
 export default function WaiterNotifications() {
   const { user } = useAuthStore();
@@ -13,6 +14,7 @@ export default function WaiterNotifications() {
   const { updateOrderStatus } = useOrderStore();
   const [prevUnread, setPrevUnread] = useState(0);
   const [deliveringId, setDeliveringId] = useState<string | null>(null);
+  const [showPrinterTest, setShowPrinterTest] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -54,11 +56,18 @@ export default function WaiterNotifications() {
 
   return (
     <div className="p-4 sm:p-6">
-      <div className="flex items-center mb-4">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="flex items-center gap-2 font-bold text-gray-800">
           <Bell className="w-5 h-5 text-brand-600" />
           Bildirimler
         </h2>
+        <button
+          onClick={() => setShowPrinterTest(true)}
+          className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5"
+        >
+          <Printer className="w-4 h-4 text-brand-600" />
+          Yazıcı Testi
+        </button>
       </div>
 
       {notifications.length === 0 ? (
@@ -112,6 +121,10 @@ export default function WaiterNotifications() {
             );
           })}
         </div>
+      )}
+
+      {showPrinterTest && (
+        <PrinterTestModal onClose={() => setShowPrinterTest(false)} />
       )}
     </div>
   );
